@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#12141c">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="指でぐるぐる回して、東京から大阪まで東海道を走り続けるドット絵ゲーム。">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="はしる、ずっと">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>はしる、ずっと</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<style>
+/* Layout: 16:9 pixel stage on top, big spin pad below; the whole screen is the touch surface.
+   Single committed dark look (night-road arcade). */
+:root {
+  --bg: #12141c;
+  --pad: #191c28;
+  --line: #343a54;
+  --fg: #ece9f4;
+  --dim: #8a90ab;
+  --accent: #ffb454;
+  --good: #7be0a0;
+  color-scheme: dark;
+  --font: "DotGothic16", ui-monospace, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+}
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font);
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+#app { height: 100%; display: flex; flex-direction: column; touch-action: none; }
+#stageWrap { position: relative; flex: 0 0 auto; width: 100%; max-width: calc((100dvh - 190px) * 16 / 9); margin-inline: auto; }
+#stage { display: block; width: 100%; aspect-ratio: 16 / 9; image-rendering: pixelated; background: #000; }
+#hud {
+  position: absolute; inset: 0 0 auto 0; padding: 6px 8px; display: flex; justify-content: space-between; gap: 8px;
+  font-size: clamp(11px, 3.1vw, 17px); line-height: 1.3; text-shadow: 0 1px 0 rgba(0,0,0,.65), 1px 0 0 rgba(0,0,0,.65), -1px 0 0 rgba(0,0,0,.65), 0 -1px 0 rgba(0,0,0,.65);
+  pointer-events: none;
+}
+#hud .r { text-align: right; }
+#hud b { color: var(--accent); font-weight: normal; }
+#bar { position: relative; width: clamp(130px, 40vw, 220px); height: 7px; margin: 5px 0 3px auto; background: #0b0d14; border: 1px solid rgba(255,255,255,.55); box-shadow: 0 1px 0 rgba(0,0,0,.6); display: flex; }
+#bar s { display: block; height: 100%; flex: 0 0 auto; }
+#bar s:nth-child(odd) { background: #3d5688; }
+#bar s:nth-child(even) { background: #6483c0; }
+#bar u { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.28); }
+#bar em { position: absolute; top: 2px; width: 2px; height: 3px; margin-left: -1px; background: #cfd6ea; }
+#bar em.got { background: var(--good); top: 1px; height: 5px; }
+#bar i { position: absolute; top: -4px; bottom: -4px; width: 4px; margin-left: -2px; background: var(--accent); box-shadow: 0 0 0 1px #12141c; }
+#nextTxt { font-size: clamp(10px, 2.8vw, 13px); }
+#seal {
+  position: absolute; left: 50%; top: 50%; width: 62px; height: 62px; margin: -31px 0 0 -31px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; text-align: center; font-size: 17px; line-height: 1.1; letter-spacing: .02em;
+  color: #d9402f; background: rgba(255,250,240,.9); border: 3px solid #d9402f; box-shadow: 0 0 0 2px rgba(255,250,240,.9);
+  opacity: 0; transform: rotate(-12deg) scale(1.6); pointer-events: none;
+}
+#seal.show { animation: stamp 1.6s ease-out forwards; }
+@keyframes stamp { 0% { opacity: 0; transform: rotate(-12deg) scale(1.8); } 14% { opacity: 1; transform: rotate(-12deg) scale(1); } 70% { opacity: 1; } 100% { opacity: 0; transform: rotate(-12deg) scale(1); } }
+@media (prefers-reduced-motion: reduce) { #seal.show { animation: none; opacity: 1; } }
+#passTxt { font-size: clamp(10px, 2.8vw, 13px); color: #d6dbee; }
+#book { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: flex; flex-direction: column; touch-action: pan-y; }
+#book[hidden] { display: none; }
+#bookHead { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; padding-top: calc(12px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); }
+#bookHead b { font-weight: normal; font-size: 17px; color: var(--accent); }
+#bookHead button { font: inherit; font-size: 13px; color: var(--fg); background: transparent; border: 1px solid var(--line); padding: 6px 12px; cursor: pointer; }
+#bookBody { overflow-y: auto; padding: 8px 16px calc(24px + env(safe-area-inset-bottom, 0px)); touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+#bookBody h3 { margin: 16px 0 8px; font-weight: normal; font-size: 13px; color: var(--dim); }
+#bookBody .grid { display: flex; flex-wrap: wrap; gap: 6px; }
+#bookBody .chip { padding: 5px 8px; font-size: 13px; border: 1px solid var(--line); color: var(--dim); min-width: 3.2em; text-align: center; }
+#bookBody .chip.got { background: var(--good); border-color: var(--good); color: #10241a; }
+#bookBody .chip.seen { color: var(--fg); border-style: dashed; }
+#bookBody .chip small { display: block; font-size: 10px; opacity: .8; }
+#toast {
+  position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%) scale(.96);
+  padding: 8px 14px; background: rgba(12, 14, 24, .82); border: 2px solid var(--accent); color: var(--fg);
+  font-size: clamp(13px, 3.8vw, 20px); text-align: center; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+#toast.got { border-color: var(--good); }
+#card {
+  position: absolute; left: 50%; top: 44px; transform: translate(-50%, -6px); min-width: 56%; max-width: 92%;
+  padding: 6px 14px 7px; text-align: center; background: rgba(12,14,24,.78); border-top: 2px solid var(--accent); border-bottom: 2px solid var(--accent);
+  opacity: 0; transition: opacity .35s, transform .35s; pointer-events: none;
+}
+#card.show { opacity: 1; transform: translate(-50%, 0); }
+#card b { display: block; font-weight: normal; font-size: clamp(18px, 6vw, 30px); letter-spacing: .12em; color: var(--accent); }
+#card span { display: block; font-size: clamp(10px, 3vw, 14px); color: var(--fg); }
+#tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+#tools button { font: inherit; font-size: 11px; color: var(--dim); background: transparent; border: 1px solid var(--line); padding: 5px 8px; cursor: pointer; }
+#tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#padWrap { position: relative; flex: 1 1 auto; min-height: 150px; background: var(--pad); border-top: 2px solid var(--line); }
+#pad { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#hint {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: var(--dim); font-size: clamp(14px, 4.2vw, 20px); text-align: center; pointer-events: none; transition: opacity .4s;
+}
+#hint .ring { width: 54px; height: 54px; border: 3px dashed var(--dim); border-radius: 50%; animation: spin 2.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #hint .ring { animation: none; } }
+#hint.hide { opacity: 0; }
+#dbg {
+  position: absolute; left: 10px; right: 10px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: space-between; align-items: end; gap: 10px;
+  font-size: 13px; color: var(--dim); pointer-events: none;
+}
+#gauge { flex: 1 1 auto; height: 8px; background: #0e1018; border: 1px solid var(--line); position: relative; max-width: 220px; }
+#gauge i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); }
+#gauge s { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--dim); }
+#reset {
+  pointer-events: auto; font: inherit; font-size: 12px; color: var(--dim); background: transparent; border: 1px solid var(--line);
+  padding: 6px 10px; cursor: pointer;
+}
+#reset:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+<style>
+[hidden] { display: none !important; }
+html { background: #12141c; }
+#app { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+
+<div id="app">
+  <div id="stageWrap">
+    <canvas id="stage" width="256" height="144" aria-label="東京から大阪へ走る道"></canvas>
+    <div id="hud">
+      <div class="l"><span id="hKm">0</span> km<br><b id="hPref">東京都</b><br><small id="passTxt"></small></div>
+      <div class="r"><span id="hSeason">春・往路(昼)</span><br>stamp <b id="hStamp">0/57</b> ・ <span id="hYear">1年目</span>
+        <div id="bar" aria-hidden="true"><i id="mk"></i></div>
+        <div id="nextTxt">次: 神奈川県まで 15km</div></div>
+    </div>
+    <div id="seal" aria-hidden="true"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </div>
+  <div id="padWrap">
+    <canvas id="pad"></canvas>
+    <div id="card" aria-live="polite"></div>
+    <div id="tools"><button id="tSound" type="button">音 ON</button><button id="tSeason" type="button">季節+1</button><button id="tNext" type="button">次の名所</button><button id="tSt" type="button">次の宿場</button><button id="tBook" type="button">図鑑</button></div>
+    <div id="hint"><div class="ring"></div><div>ここを指でぐるぐる回す<br><span style="font-size:.8em">小さい円でも大丈夫。離しても少し走り続けます<br>(パソコンはマウスで円を描く)</span></div></div>
+    <div id="dbg">
+      <div id="rpm">回転 0.0回/秒 ・ 速度 ×0.00</div>
+      <div id="gauge"><i id="gfill"></i><s></s></div>
+      <button id="reset" type="button">最初から</button>
+    </div>
+  </div>
+</div>
+
+<div id="book" hidden>
+  <div id="bookHead"><b id="bookTitle">宿場スタンプ</b><button id="bookClose" type="button">閉じる</button></div>
+  <div id="bookBody"></div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  // ---------- constants ----------
+  const W = 256, H = 144;
+  const BASE_SPEED = 82;                 // px/s at x1.0
+  const LEG_SECONDS = 210;               // one way at x1.0 (3.5 min) -> round trip 7 min
+  const LEG = BASE_SPEED * LEG_SECONDS;  // px
+  const KM_TOTAL = 550;
+  const PX_PER_KM = LEG / KM_TOTAL;
+  const STD_REV = 1.0;                   // rev/s that equals x1.0
+  const ACCEL = 7, COAST = 1.5;          // speed-up rate / slow-down rate (small = long coast after the finger stops)
+  const MAX_MULT = 2.0;
+  const TURN_WINDOW = 0.35;              // s
+  const SEASONS = ["春", "夏", "秋", "冬"];
+  const PREFS = [[0, "東京都"], [15, "神奈川県"], [100, "静岡県"], [290, "愛知県"], [385, "三重県"], [465, "滋賀県"], [505, "京都府"], [522, "大阪府"]];
+  // placeholder checkpoints: [km, name, color]. Season of each = index % 4.
+  const SPOTS = [
+    [3, "日本橋", "#c9503a", "nihonbashi", "すべての街道の起点・道路元標の橋"], [35, "横浜", "#4a8fd8", "yokohama", "開港の町・みなとみらいの景色"], [90, "箱根", "#7fb069", "hakone", "芦ノ湖と湯けむりの山道"], [130, "富士山", "#e8eef8", "fuji", "静岡と山梨にまたがる日本一高い山"],
+    [260, "浜名湖", "#3f7fbf", "hamanako", "弁天島の赤い大鳥居"], [330, "名古屋城", "#d9b44a", "nagoya", "金のしゃちほこが輝くお城"], [462, "鈴鹿峠", "#8a8f9e", "suzuka", "霧の立ちこめる東海道の難所"], [480, "琵琶湖", "#4fb3c8", "biwa", "日本一大きな湖(滋賀県)"],
+    [508, "三条大橋", "#a8503a", "sanjo", "東海道の終点・鴨川にかかる橋"], [524, "伏見", "#b8402f", "fushimi", "朱色の鳥居と酒蔵の町"], [546, "通天閣", "#d94a6a", "tsuten", "大阪・新世界のシンボルタワー"]
+  ];
+  // 57 post stations (Tokaido 53 + Kyokaido 4). [name, prefecture index, fixed season (-1 = balanced automatically)]
+  const STATION_DEF = [
+    ["品川",0,-1],
+    ["川崎",1,-1],["神奈川",1,-1],["保土ヶ谷",1,-1],["戸塚",1,-1],["藤沢",1,-1],["平塚",1,-1],["大磯",1,-1],["小田原",1,-1],["箱根",1,2],
+    ["三島",2,-1],["沼津",2,-1],["原",2,-1],["吉原",2,-1],["蒲原",2,3],["由比",2,0],["興津",2,-1],["江尻",2,-1],["府中",2,-1],["丸子",2,-1],["岡部",2,-1],["藤枝",2,-1],["島田",2,-1],["金谷",2,-1],["日坂",2,-1],["掛川",2,2],["袋井",2,-1],["見附",2,-1],["浜松",2,3],["舞阪",2,1],["新居",2,1],["白須賀",2,-1],
+    ["二川",3,-1],["吉田",3,-1],["御油",3,-1],["赤坂",3,-1],["藤川",3,-1],["岡崎",3,-1],["池鯉鮒",3,1],["鳴海",3,-1],["宮",3,-1],
+    ["桑名",4,-1],["四日市",4,-1],["石薬師",4,-1],["庄野",4,1],["亀山",4,3],["関",4,-1],["坂下",4,-1],
+    ["土山",5,0],["水口",5,-1],["石部",5,-1],["草津",5,-1],["大津",5,-1],
+    ["伏見",6,-1,516],["淀",6,-1,520],
+    ["枚方",7,-1,526],["守口",7,-1,532]
+  ];
+  const STATIONS = (() => {
+    const cnt = [0, 0, 0, 0], perPref = {};
+    STATION_DEF.forEach(d => { perPref[d[1]] = (perPref[d[1]] || 0) + 1; if (d[2] >= 0) cnt[d[2]]++; });
+    const seenPref = {};
+    return STATION_DEF.map(d => {
+      const j = seenPref[d[1]] = (seenPref[d[1]] || 0) + 1, start = PREFS[d[1]][0], end = d[1] + 1 < PREFS.length ? PREFS[d[1] + 1][0] : KM_TOTAL;
+      let se = d[2]; if (se < 0) { se = cnt.indexOf(Math.min(...cnt)); cnt[se]++; }
+      return { name: d[0], pref: d[1], km: d[3] || (start + (j - 0.5) / perPref[d[1]] * (end - start)), season: se };
+    });
+  })();
+  const FXAX = {}; SPOTS.forEach(sp => { if (sp[3]) FXAX[sp[3]] = sp[0] * PX_PER_KM; });
+  const CLEAR = [["biwa", 720], ["yokohama", 620], ["hamanako", 650], ["hakone", 520], ["sanjo", 360], ["nihonbashi", 560], ["nagoya", 200], ["fushimi", 300], ["suzuka", 400]];
+  const SKY = [ // [day top, day bottom, night top, night bottom]
+    ["#86d0f2", "#fde6ef", "#1c2150", "#4a3a78"],
+    ["#3da5ff", "#c8efff", "#0d1b3d", "#2c4a7a"],
+    ["#7fb0d6", "#f6d7a6", "#231a3a", "#6b3f4f"],
+    ["#b4cbe0", "#eef4f8", "#0f1a2e", "#34476b"]
+  ];
+  const TREE = ["#f2a4c0", "#2f9e4f", "#e0782b", "#dfe9f0"];
+  const GRASS = ["#8fcf7a", "#3f9a4a", "#b98a45", "#eef2f6"];
+  const KEY = "hashiru-proto-v2";
+
+  // ---------- state ----------
+  const S = { rounds: 0, dir: 1, d: 0, stamps: [], seen: [], totalSec: 0 };
+  let mult = 0, phase = 0, revRate = 0;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { const o = JSON.parse(raw); if (o && typeof o.d === "number") Object.assign(S, o); }
+  } catch (e) {}
+  if (!Array.isArray(S.stamps)) S.stamps = [];
+  if (!Array.isArray(S.seen)) S.seen = [];
+  S.d = Math.max(0, Math.min(LEG, +S.d || 0));
+  S.dir = S.dir === -1 ? -1 : 1;
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  // ---------- helpers ----------
+  const $ = id => document.getElementById(id);
+  const cv = $("stage"), ctx = cv.getContext("2d");
+  const pad = $("pad"), pctx = pad.getContext("2d");
+  function hash(n) { n = (n | 0) ^ 0x9e3779b9; n = Math.imul(n ^ (n >>> 16), 0x85ebca6b); n = Math.imul(n ^ (n >>> 13), 0xc2b2ae35); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; }
+  const lerp = (a, b, t) => a + (b - a) * t;
+  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  function mix(a, b, t) { const A = hex(a), B = hex(b); return "rgb(" + A.map((v, i) => Math.round(lerp(v, B[i], t))).join(",") + ")"; }
+  const seasonIdx = () => S.rounds % 4;
+  const isNight = () => S.dir < 0;
+  const aRoute = () => (S.dir > 0 ? S.d : LEG - S.d);   // route coordinate (px from Tokyo)
+  const RX = () => (S.dir > 0 ? 88 : 168);
+
+  // ---------- spin detection (heading change of the finger path) ----------
+  const turns = [];            // {t, a}
+  let active = false, lastPt = null, lastVec = null, idleUntil = 0;
+  const trail = [];
+  function now() { return performance.now() / 1000; }
+  function onDown(e) {
+    active = true; lastPt = { x: e.clientX, y: e.clientY }; lastVec = null; turns.length = 0;
+    try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch (_) {}
+    $("hint").classList.add("hide"); ensureAudio();
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (!active) return;
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    const list = evs && evs.length ? evs : [e];
+    for (const p of list) step(p.clientX, p.clientY);
+    e.preventDefault();
+  }
+  function step(x, y) {
+    const dx = x - lastPt.x, dy = y - lastPt.y;
+    if (dx * dx + dy * dy < 16) return;                       // ignore moves under 4px
+    const t = now();
+    if (lastVec) {
+      const cross = lastVec.x * dy - lastVec.y * dx, dot = lastVec.x * dx + lastVec.y * dy;
+      const ang = Math.atan2(cross, dot);
+      if (Math.abs(ang) < 1.8) turns.push({ t, a: ang });     // a sharp U-turn is a back-and-forth swipe, not a circle
+    }
+    lastVec = { x: dx, y: dy }; lastPt = { x, y };
+    const r = pad.getBoundingClientRect();
+    trail.push({ x: x - r.left, y: y - r.top, t });
+  }
+  function onUp() { active = false; lastVec = null; }
+  const app = $("app");
+  app.addEventListener("pointerdown", onDown, { passive: false });
+  window.addEventListener("pointermove", onMove, { passive: false });
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+  app.addEventListener("contextmenu", e => e.preventDefault());
+
+  function revPerSec() {
+    const t = now();
+    while (turns.length && t - turns[0].t > TURN_WINDOW) turns.shift();
+    let s = 0; for (const k of turns) s += k.a;
+    return Math.abs(s) / (2 * Math.PI) / TURN_WINDOW;
+  }
+
+  // ---------- toast ----------
+  let toastTimer = 0;
+  function toast(msg, got) {
+    const el = $("toast"); el.textContent = msg; el.classList.toggle("got", !!got); el.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+  }
+
+  // ---------- particles ----------
+  const parts = Array.from({ length: 36 }, (_, i) => ({ x: hash(i) * W, y: hash(i + 99) * H, v: 6 + hash(i + 7) * 14, s: 0.5 + hash(i + 55) }));
+
+  // ---------- drawing ----------
+  function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+  function drawSky(a) {
+    const sk = SKY[seasonIdx()], n = isNight();
+    const g = ctx.createLinearGradient(0, 0, 0, 104);
+    g.addColorStop(0, n ? sk[2] : sk[0]); g.addColorStop(1, n ? sk[3] : sk[1]);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 112);
+    if (n) {
+      for (let i = 0; i < 40; i++) { const sx = (hash(i) * 400 - a * 0.02) % 256; rect(((sx % 256) + 256) % 256, hash(i + 40) * 60, 1, 1, "#e8e6ff"); }
+      rect(206, 20, 10, 10, "#f4efd0"); rect(209, 20, 7, 10, "#12163a"); rect(206, 21, 3, 8, "#f4efd0");
+    } else {
+      rect(204, 16, 12, 12, "#fff3a0"); rect(202, 18, 16, 8, "#fff3a0"); rect(206, 14, 8, 16, "#fff3a0");
+      for (let i = 0; i < 8; i++) {
+        const cx = ((hash(i + 300) * 520 - a * 0.1) % 520 + 520) % 520 - 60, cy = 14 + hash(i + 310) * 34;
+        rect(cx, cy, 26, 5, "rgba(255,255,255,.85)"); rect(cx + 5, cy - 4, 14, 5, "rgba(255,255,255,.85)");
+      }
+    }
+  }
+
+  function ridge(a, f, base, amp, col, seed) {
+    ctx.fillStyle = col;
+    for (let x = 0; x < W; x++) {
+      const wx = x + a * f;
+      const h = base + amp * (Math.sin(wx * 0.021 + seed) * 0.6 + Math.sin(wx * 0.047 + seed * 2) * 0.3 + Math.sin(wx * 0.11 + seed * 3) * 0.1);
+      ctx.fillRect(x, Math.round(104 - h), 1, Math.round(h));
+    }
+  }
+
+  function drawBuildings(a) {
+    const f = 0.6, cell = 44, si = seasonIdx(), n = isNight();
+    const first = Math.floor((a * f - 20) / cell), last = Math.floor((a * f + W + 20) / cell);
+    for (let i = first; i <= last; i++) {
+      const r = hash(i * 7 + 3), x = i * cell - a * f + Math.floor(hash(i + 11) * 14), base = 104, rc = i * cell / f;
+      if (CLEAR.some(c => Math.abs(rc - FXAX[c[0]]) < c[1])) continue;
+      if (Math.abs(rc - FXAX.fuji) < 600 && r >= 0.64) continue;
+      if (r < 0.34) {                                  // tree
+        rect(x + 6, base - 12, 3, 12, "#5a3d2b"); rect(x, base - 24, 15, 13, TREE[si]); rect(x + 3, base - 28, 9, 6, TREE[si]);
+      } else if (r < 0.64) {                           // house
+        const c = ["#d9c7a3", "#c9d6dc", "#e0b5a0", "#b9c9a8"][Math.floor(hash(i + 21) * 4)];
+        rect(x, base - 16, 26, 16, c); rect(x - 2, base - 21, 30, 5, "#6a4a46"); rect(x + 3, base - 12, 5, 5, n ? "#ffd070" : "#7ab0d0"); rect(x + 17, base - 12, 5, 12, "#5a4a3a");
+      } else if (r < 0.86) {                           // office block
+        const h = 32 + Math.floor(hash(i + 31) * 28), c = ["#8d98ad", "#9aa3b8", "#788398"][Math.floor(hash(i + 41) * 3)];
+        rect(x, base - h, 24, h, c);
+        for (let wy = base - h + 4; wy < base - 6; wy += 7) for (let wx = x + 3; wx < x + 21; wx += 7) rect(wx, wy, 4, 4, n ? (hash(wx + wy * 3 + i) < 0.6 ? "#ffd070" : "#3a4258") : "#bfe0f2");
+      }
+    }
+  }
+
+  function drawGround(a) {
+    const si = seasonIdx();
+    rect(0, 104, W, 8, GRASS[si]);
+    rect(0, 112, W, 32, "#4b4f5c"); rect(0, 112, W, 2, "#6a6f7e"); rect(0, 142, W, 2, "#3a3d48");
+    const off = Math.round(a) % 32;
+    for (let x = -32; x < W + 32; x += 32) rect(x - off, 127, 16, 2, "#e8e2c0");
+    // roadside posts (give the eye something fast at x1.0)
+    const o2 = Math.round(a) % 48;
+    for (let x = -48; x < W + 48; x += 48) { rect(x - o2, 100, 2, 12, "#d8d8d8"); rect(x - o2 - 1, 99, 4, 2, "#e24a3a"); }
+  }
+
+  function drawSpotsAndSigns(a) {
+    const R = RX();
+    // prefecture border signs
+    for (let i = 1; i < PREFS.length; i++) {
+      const ax = PREFS[i][0] * PX_PER_KM, x = R + (ax - a);
+      if (x < -60 || x > W + 60) continue;
+      rect(x, 82, 2, 26, "#cfd3dc"); rect(x - 14, 76, 30, 10, "#1f6fb8"); rect(x - 13, 77, 28, 8, "#2a82d0");
+      ctx.fillStyle = "#fff"; ctx.font = "7px monospace"; ctx.textBaseline = "top"; ctx.fillText(PREFS[i][1].slice(0, 3), x - 11, 78);
+    }
+    ctx.font = "8px DotGothic16, monospace"; ctx.textBaseline = "top";
+    STATIONS.forEach((st, i) => {
+      const x = R + (st.km * PX_PER_KM - a); if (x < -24 || x > W + 24) return;
+      const w = st.name.length * 8 + 4, got = S.stamps.includes(i);
+      rect(x - 1, 93, 2, 12, "#6b4a2b"); rect(x - w / 2, 86, w, 9, got ? "#3f7a4a" : "#8a6238"); rect(x - w / 2, 86, w, 1, got ? "#7bd08a" : "#b58a58");
+      ctx.fillStyle = "#fff3d6"; ctx.fillText(st.name, x - w / 2 + 2, 87);
+    });
+    const si = seasonIdx();
+    SPOTS.forEach((sp, i) => {
+      const ax = sp[0] * PX_PER_KM, x = R + (ax - a);
+      if (sp[3] || x < -50 || x > W + 50) return;
+      const mine = false, col = sp[2];
+      rect(x - 10, 44, 20, 60, col); rect(x - 12, 40, 24, 5, "#2a2d3a"); rect(x - 2, 30, 4, 11, "#2a2d3a");
+      rect(x - 6, 52, 12, 8, "#ffffff55"); rect(x - 6, 66, 12, 8, "#ffffff44");
+      rect(x - 22, 84, 44, 14, "#14161f"); rect(x - 21, 85, 42, 12, mine ? "#ffb454" : "#8a90ab");
+      ctx.fillStyle = "#14161f"; ctx.font = "9px monospace"; ctx.textBaseline = "top";
+      ctx.fillText(sp[1].length > 4 ? sp[1].slice(0, 4) : sp[1], x - 20, 86);
+    });
+    drawFrontFx(a);
+  }
+
+  // ---------- protagonist: young Japanese man (jointed, drawn with a pixel brush) ----------
+  // Aging by year: 0 twenties / 1 thirties (stubble) / 2 forties (grey temples) / 3 fifties (greying, stoop) / 4+ sixties (white hair)
+  const AGE = [
+    { style: "spiky", hair: "#1f1a1a", temple: null,      stubble: 0, glasses: 0, belly: 0, lean: 0.18, sh: "#f5f4ee", shB: "#d2d0c6", face: "smile" },   // 20s: spiky hair, clean face, white tee
+    { style: "long",  hair: "#2a211e", temple: null,      stubble: 2, glasses: 0, belly: 0, lean: 0.22, sh: "#f5f4ee", shB: "#d2d0c6", face: "flat" },    // 30s: longer hair, dark stubble
+    { style: "thin",  hair: "#3a3436", temple: "#b5b2b8", stubble: 2, glasses: 1, belly: 1, lean: 0.26, sh: "#f5f4ee", shB: "#d2d0c6", face: "flat" },    // 40s: glasses, grey temples, belly
+    { style: "thin",  hair: "#8c8890", temple: "#c9c8ce", stubble: 3, glasses: 1, belly: 1, lean: 0.34, sh: "#f5f4ee", shB: "#d2d0c6", face: "flat" },    // 50s: grey hair, white stubble, stoop, beige
+    { style: "thin",  hair: "#e8e8f0", temple: "#ffffff", stubble: 3, glasses: 1, belly: 1, lean: 0.44, sh: "#f5f4ee", shB: "#d2d0c6", face: "flat" }     // 60s: white hair, deeper stoop, purple
+  ];
+  const CLR = { skin: "#f0c49a", skinB: "#d6a278", shirt: "#f5f4ee", shirtB: "#d2d0c6", shorts: "#2b3a67", shortsB: "#202c50", shoe: "#f4f4f4", sole: "#c0463a", towel: "#ffd23f", towelB: "#e0a800" };
+  function drawRunnerPx(c, x, fy, ph, m, years, flip) {
+    const A = AGE[Math.min(years, AGE.length - 1)];
+    const rr = Math.round;
+    const px = (X, Y, w, h, col) => { c.fillStyle = col; c.fillRect(rr(X), rr(Y), w, h); };
+    const limb = (x0, y0, x1, y1, w, col) => {
+      const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
+      for (let i = 0; i <= n; i++) { const t = i / n; px(lerp(x0, x1, t) - w / 2, lerp(y0, y1, t) - w / 2, w, w, col); }
+    };
+    const L1 = 6.5, L2 = 6.5, LT = 8.5, UA = 5, FA = 5;
+    const running = m > 0.04;
+    const leg = p => {
+      if (!running) return { th: p ? 0.10 : -0.10, kn: 0.08 };
+      return { th: 0.95 * Math.sin(p), kn: 0.2 + 1.15 * Math.max(0, Math.cos(p)) };
+    };
+    const lean = A.lean + (running ? 0.10 * Math.min(1, m) : 0);
+    const bob = running ? Math.round(1.6 * Math.abs(Math.sin(ph))) : 0;
+    const legPts = p => {
+      const g = leg(p);
+      const hx = 0, hy = 0;
+      const kx = hx + L1 * Math.sin(g.th), ky = hy + L1 * Math.cos(g.th);
+      const an = g.th - g.kn;
+      return { hx, hy, kx, ky, ax: kx + L2 * Math.sin(an), ay: ky + L2 * Math.cos(an) };
+    };
+    const front = legPts(ph), back = legPts(ph + Math.PI);
+    const reach = Math.max(front.ay, back.ay);
+    const hipY = fy - (L1 + L2) * 0.98 - bob + Math.min(0, (L1 + L2) * 0.98 - reach) * 0;   // body rides on the stance leg
+    const ground = fy - 1;
+    let lift = Math.max(0, Math.max(front.ay, back.ay) + hipY - ground);                        // keep feet above the road
+    const HY = hipY - lift;
+    c.save(); c.translate(rr(x), 0); if (flip < 0) c.scale(-1, 1);
+    // shadow
+    px(-7, fy, 14, 1, "rgba(0,0,0,.35)");
+    const sx = Math.sin(lean) * LT, sy = -Math.cos(lean) * LT;
+    const SXp = sx, SYp = HY + sy;                         // shoulder point
+    const armPts = (p) => {
+      const th = running ? -0.95 * Math.sin(p) : (p ? 0.12 : -0.12);
+      const ex = SXp + UA * Math.sin(th), ey = SYp + UA * Math.cos(th);
+      const fa = running ? th + 1.5 : th + 0.2;
+      return { ex, ey, wx: ex + FA * Math.sin(fa), wy: ey + FA * Math.cos(fa) };
+    };
+    const shoe = (a, col) => { px(a.ax - 1.5, a.ay + HY - 1, 5, 2, col); px(a.ax - 1.5, a.ay + HY + 0.5, 5, 1, CLR.sole); };
+    const drawLeg = (g, shade) => {
+      limb(0, HY, g.kx, g.ky + HY, 3, shade ? CLR.shortsB : CLR.shorts);
+      limb(g.kx, g.ky + HY, g.ax, g.ay + HY, 2, shade ? CLR.skinB : CLR.skin);
+      shoe(g, shade ? "#c8c8c8" : CLR.shoe);
+    };
+    const drawArm = (g, shade) => { limb(SXp, SYp, g.ex, g.ey, 2, shade ? A.shB : A.sh); limb(g.ex, g.ey, g.wx, g.wy, 2, shade ? CLR.skinB : CLR.skin); };
+    const backArm = armPts(ph), frontArm = armPts(ph + Math.PI);
+    // draw order: back arm, back leg, torso, shorts, front leg, head, front arm
+    drawArm(backArm, true);
+    drawLeg(back, true);
+    limb(0, HY, SXp, SYp, 6, A.sh);
+    if (A.belly) { px(1, HY - 5, 4, 5, A.sh); px(4, HY - 4, 1, 3, A.shB); }
+    limb(0, HY + 1, 0, HY - 1, 7, CLR.shorts);
+    // towel around the neck, tail flutters
+    px(SXp - 3, SYp - 1, 7, 2, CLR.towel); px(SXp - 3, SYp + 1, 2, 1, CLR.towelB);
+    const fl = running ? Math.sin(ph * 2) : 0;
+    px(SXp - 6 - Math.round(1.5 * Math.min(2, m)), SYp - 1 + Math.round(fl), 3, 2, CLR.towel);
+    px(SXp - 8 - Math.round(2.5 * Math.min(2, m)), SYp + Math.round(fl * 1.5), 2, 2, CLR.towelB);
+    drawLeg(front, false);
+    // head
+    const hx = SXp + Math.sin(lean + 0.1) * 5, hy = SYp - Math.cos(lean + 0.1) * 5;
+    px(hx - 3, hy - 3, 7, 7, CLR.skin);
+    if (A.style === "spiky") {                                                               // 20s: spiky, tall
+      px(hx - 3, hy - 4, 7, 2, A.hair); px(hx - 4, hy - 3, 2, 4, A.hair);
+      px(hx - 3, hy - 6, 1, 2, A.hair); px(hx - 1, hy - 7, 1, 3, A.hair); px(hx + 1, hy - 6, 1, 2, A.hair); px(hx + 3, hy - 5, 1, 2, A.hair);
+    } else if (A.style === "long") {                                                         // 30s: longer, covers ears and nape
+      px(hx - 3, hy - 4, 7, 3, A.hair); px(hx - 5, hy - 3, 3, 8, A.hair); px(hx + 2, hy - 3, 2, 1, A.hair);
+    } else {                                                                                 // 40s+: shorter, receding
+      px(hx - 3, hy - 4, 6, 2, A.hair); px(hx - 4, hy - 3, 2, 4, A.hair);
+    }
+    if (A.temple) { px(hx - 4, hy - 2, 2, 2, A.temple); px(hx - 1, hy - 4, 3, 1, A.temple); }
+    if (A.glasses) { px(hx, hy - 2, 4, 1, "#232733"); px(hx, hy - 1, 1, 2, "#232733"); px(hx + 1, hy - 1, 3, 2, "#d6efff"); px(hx + 2, hy - 1, 1, 1, "#1e1a1a"); px(hx - 3, hy - 2, 3, 1, "#232733"); }
+    else { px(hx + 1, hy - 1, 1, 2, "#1e1a1a"); }                                         // eye
+    px(hx + 3, hy + 1, 1, 1, CLR.skinB);                                                    // nose
+    if (A.face === "smile") { px(hx + 1, hy + 2, 3, 1, "#b26b5a"); px(hx + 3, hy + 1, 1, 1, "#b26b5a"); px(hx + 1, hy, 1, 1, "#f4a58c"); }
+    else { px(hx + 2, hy + 2, 2, 1, "#b26b5a"); }
+    if (A.stubble) {
+      const sc = A.stubble === 3 ? "#d8d8e0" : "#4a3f3a";
+      px(hx - 2, hy + 1, 1, 2, sc); px(hx - 2, hy + 3, 6, 1, sc); px(hx + 2, hy + 3, 2, 1, sc);
+      if (A.stubble === 2) { px(hx - 1, hy + 2, 1, 1, sc); px(hx + 1, hy + 2, 1, 1, sc); }
+    }
+    drawArm(frontArm, false);
+    c.restore();
+  }
+  function drawRunner() {
+    drawRunnerPx(ctx, RX(), 130, phase, mult, Math.floor(S.rounds / 4), S.dir);
+  }
+
+  // ---------- special checkpoint scenes (auto-flowing showpieces) ----------
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const sstep = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  let T = 0;
+  function pline(x0, y0, x1, y1, w, col) {
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2));
+    ctx.fillStyle = col;
+    for (let i = 0; i <= n; i++) { const t = i / n; ctx.fillRect(Math.round(lerp(x0, x1, t) - w / 2), Math.round(lerp(y0, y1, t) - w / 2), w, w); }
+  }
+  // Fuji: grows up behind the road as you approach; sky glow and cap change with the season
+  function drawFujiFx(a) {
+    const ax = FXAX.fuji, rel = ax - a, R = RX();
+    if (Math.abs(rel) > 900) return;
+    const k = sstep(1 - Math.abs(rel) / 900), si = seasonIdx();
+    const gcol = ["rgba(255,190,210,", "rgba(190,235,255,", "rgba(255,150,80,", "rgba(232,242,255,"][si];
+    const g = ctx.createLinearGradient(0, 14, 0, 104);
+    g.addColorStop(0, gcol + "0)"); g.addColorStop(1, gcol + (0.6 * k).toFixed(2) + ")");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 104);
+    const cx = R + rel * 0.35, HW = 128, HT = 80, base = 104, hmax = HT * (0.3 + 0.7 * k);
+    const body = ["#6f86b8", "#4a68a8", "#b0553e", "#7388b4"][si];
+    const bodyL = body, bodyR = mix(body, "#ffffff", 0.2);
+    const capH = [34, 9, 26, 58][si] * (hmax / HT);
+    for (let x = Math.max(0, Math.floor(cx - HW)); x <= Math.min(W - 1, Math.ceil(cx + HW)); x++) {
+      const u = Math.abs(x - cx) / HW; if (u >= 1) continue;
+      const h = hmax * Math.pow(1 - Math.max(u, 0.07), 1.45), top = base - h;
+      ctx.fillStyle = x < cx ? bodyL : bodyR; ctx.fillRect(x, Math.round(top), 1, Math.round(h));
+      const jag = 3 * Math.sin(x * 0.5) + 2 * Math.sin(x * 0.23 + 1);
+      const depth = capH * (1 - u * 1.15) + jag;
+      if (depth > 1 && u < 0.8) { ctx.fillStyle = x < cx ? "#dfe5f2" : "#f6f8fc"; ctx.fillRect(x, Math.round(top), 1, Math.round(depth)); }
+    }
+    const yb = base - hmax * 0.42;
+    for (let j = 0; j < 2; j++) {
+      const x0 = cx - 150 + ((T * 7 + j * 150) % 320);
+      rect(x0, yb + j * 9, 64, 4, "rgba(255,255,255,.55)"); rect(x0 + 12, yb + j * 9 - 3, 38, 3, "rgba(255,255,255,.55)");
+    }
+  }
+  // Lake Biwa: a lens-shaped lake fills the far side of the road, with sparkle, sun/moon streak, a sailboat and birds
+  function drawBiwaFx(a) {
+    const ax = FXAX.biwa, R = RX(), LR = 620, n = isNight();
+    let any = false;
+    for (let x = 0; x < W; x++) {
+      const p = sstep(1 - Math.abs(a + (x - R) - ax) / LR); if (p <= 0.02) continue;
+      any = true; const h = Math.round(18 * p), top = 104 - h;
+      ctx.fillStyle = n ? "#16314f" : "#4c9fc6"; ctx.fillRect(x, top, 1, h);
+      ctx.fillStyle = n ? "#10253f" : "#3b86ae"; ctx.fillRect(x, top + (h >> 1), 1, h - (h >> 1));
+      ctx.fillStyle = n ? "#2a4c70" : "#9bd8ee"; ctx.fillRect(x, top, 1, 1);
+    }
+    if (!any) return;
+    const pAt = x => sstep(1 - Math.abs(a + (x - R) - ax) / LR);
+    for (let j = 0; j < 50; j++) {
+      const x = Math.floor((((hash(j) * W * 1.4 - a * 0.5 + T * 8 * (hash(j + 9) - 0.5)) % W) + W) % W), p = pAt(x);
+      if (p < 0.35 || Math.sin(T * 3 + j * 1.7) < 0.3) continue;
+      rect(x, 104 - 2 - Math.floor(hash(j + 50) * 16 * p), 2, 1, n ? "#9bb8d8" : "#ffffff");
+    }
+    const ps = pAt(210);
+    if (ps > 0.3) for (let yy = 0; yy < Math.floor(16 * ps); yy += 2) rect(207 + Math.round(Math.sin(T * 2 + yy) * 1.5), 104 - 16 * ps + yy, 6 - (yy >> 2), 1, n ? "#e8e4b8" : "#fff6b0");
+    const bx = R + (ax + 90 - a) + Math.sin(T * 0.3) * 16, by = 99 + Math.round(Math.sin(T * 2));
+    if (bx > -20 && bx < W + 20 && pAt(bx) > 0.5) {
+      rect(bx - 6, by, 13, 3, "#7a4a2c"); rect(bx, by - 12, 1, 12, "#444");
+      for (let r = 0; r < 10; r++) rect(bx + 1, by - 11 + r, 1 + Math.round(r * 0.6), 1, "#fafafa");
+      rect(bx - 5, by - 6, 1, 6, "#fafafa");
+    }
+    if (!n) for (let j = 0; j < 3; j++) {
+      const bxp = ((T * 18 + j * 110) % 340) - 40, byp = 36 + j * 9 + Math.sin(T * 3 + j) * 2, fl = Math.sin(T * 10 + j) > 0 ? 1 : 0;
+      rect(bxp, byp, 2, 1, "#2a2d3a"); rect(bxp - 2, byp - 1 + fl, 2, 1, "#2a2d3a"); rect(bxp + 2, byp - 1 + fl, 2, 1, "#2a2d3a");
+    }
+  }
+  // Tsutenkaku: neon-topped tower and a takoyaki stall with steam; confetti bursts as you pass
+  function drawTsutenFx(a) {
+    const ax = FXAX.tsuten, R = RX(), n = isNight(), x = R + (ax - a) * 0.6;
+    const RED = "#d4412f", WHT = "#f2f2ee";
+    if (x > -40 && x < W + 40) {
+      pline(x - 17, 110, x - 5, 62, 3, RED); pline(x + 17, 110, x + 5, 62, 3, RED);
+      for (let yy = 70; yy < 110; yy += 8) { const w = lerp(5, 17, (yy - 62) / 48); rect(x - w, yy, Math.round(w * 2), 1, WHT); }
+      pline(x - 14, 98, x + 8, 70, 1, WHT); pline(x + 14, 98, x - 8, 70, 1, WHT);
+      rect(x - 11, 56, 22, 7, RED); rect(x - 10, 58, 20, 3, n ? "#ffe27a" : "#bfe0f2");
+      rect(x - 4, 42, 8, 14, RED); pline(x - 3, 56, x + 3, 43, 1, WHT); pline(x + 3, 56, x - 3, 43, 1, WHT);
+      rect(x - 8, 33, 16, 8, WHT); rect(x - 8, 36, 16, 2, RED);
+      rect(x - 1, 14, 2, 19, "#cfd3dc");
+      const neon = "hsl(" + Math.round((T * 80) % 360) + ",90%," + (n ? 65 : 55) + "%)";
+      ctx.fillStyle = neon; ctx.fillRect(Math.round(x - 7), 30, 14, 2); ctx.fillRect(Math.round(x - 5), 26, 10, 2); ctx.fillRect(Math.round(x - 3), 22, 6, 2);
+      if (n) { ctx.globalAlpha = 0.22; ctx.fillRect(Math.round(x - 16), 18, 32, 18); ctx.globalAlpha = 1; }
+    }
+    const sx = R + (ax - a) + 36;
+    if (sx > -30 && sx < W + 30) {
+      rect(sx - 15, 100, 30, 12, "#8a4a2a"); rect(sx - 15, 100, 30, 2, "#a8663f");
+      for (let j = 0; j < 8; j++) rect(sx - 16 + j * 4, 91, 4, 7, j % 2 ? "#ffffff" : "#d94a3a");
+      rect(sx - 16, 98, 32, 1, "#7a2a20");
+      ctx.fillStyle = "#fff"; ctx.font = "8px DotGothic16, monospace"; ctx.textBaseline = "top"; ctx.fillText("たこ焼", sx - 12, 102);
+      for (let j = 0; j < 3; j++) rect(sx - 8 + j * 7 + Math.round(Math.sin(T * 2 + j) * 2), 90 - ((T * 14 + j * 7) % 18), 3, 2, "rgba(255,255,255,.7)");
+    }
+  }
+  // confetti (shared by showpieces)
+  const confetti = [];
+  function burst(x, y, n) {
+    for (let i = 0; i < n; i++) confetti.push({ x, y, vx: (Math.random() - 0.5) * 120, vy: -40 - Math.random() * 90, c: ["#ff5d73", "#ffd23f", "#4cc9f0", "#7be0a0", "#c77dff"][i % 5], life: 2.2 + Math.random() * 0.8 });
+  }
+  function drawConfetti(dt) {
+    for (let i = confetti.length - 1; i >= 0; i--) {
+      const p = confetti[i]; p.life -= dt; if (p.life <= 0 || p.y > H) { confetti.splice(i, 1); continue; }
+      p.vy += 160 * dt; p.vx *= 0.99; p.x += p.vx * dt; p.y += p.vy * dt; rect(p.x, p.y, 2, 2, p.c);
+    }
+  }
+  // title card shown when a showpiece is reached
+  let cardFor = -1, cardTimer = 0;
+  function cardCheck(a) {
+    SPOTS.forEach((sp, i) => {
+      if (!sp[3]) return;
+      const d = Math.abs(sp[0] * PX_PER_KM - a);
+      if (d < 140 && cardFor !== i) {
+        cardFor = i; const el = $("card");
+        el.innerHTML = "<b></b><span></span>"; el.firstChild.textContent = sp[1]; el.lastChild.textContent = sp[4];
+        el.classList.add("show"); snd("card", sp[3], seasonIdx()); clearTimeout(cardTimer); cardTimer = setTimeout(() => el.classList.remove("show"), 3400);
+      } else if (d > 450 && cardFor === i) cardFor = -1;
+    });
+  }
+
+  // ---------- eight more showpieces ----------
+  function pres(ax, LR, x) { return sstep(1 - Math.abs(aRoute() + (x - RX()) - ax) / LR); }
+  function waterBand(ax, LR, hMax, day, night) {
+    const n = isNight(), c = n ? night : day; let any = false;
+    for (let x = 0; x < W; x++) {
+      const p = pres(ax, LR, x); if (p <= 0.02) continue; any = true;
+      const h = Math.max(1, Math.round(hMax * p)), top = 104 - h;
+      ctx.fillStyle = c[0]; ctx.fillRect(x, top, 1, h);
+      ctx.fillStyle = c[1]; ctx.fillRect(x, top + (h >> 1), 1, h - (h >> 1));
+      ctx.fillStyle = c[2]; ctx.fillRect(x, top, 1, 1);
+    }
+    if (any) for (let j = 0; j < 40; j++) {
+      const x = Math.floor((((hash(j + 700) * W * 1.4 - aRoute() * 0.5 + T * 8 * (hash(j + 9) - 0.5)) % W) + W) % W), p = pres(ax, LR, x);
+      if (p < 0.4 || Math.sin(T * 3 + j * 1.7) < 0.3) continue;
+      rect(x, 104 - 2 - Math.floor(hash(j + 750) * hMax * p * 0.9), 2, 1, n ? "#9bb8d8" : "#ffffff");
+    }
+    return any;
+  }
+  const RIVER = [["#6aa6c4", "#4f8cac", "#b8e0ee"], ["#16304a", "#0e2036", "#2a4a6c"]];
+  const SEA = [["#3f8fbf", "#2f78a6", "#8fd0ea"], ["#162a4a", "#0e1d38", "#2a4468"]];
+  const LAKE = [["#4fa8cf", "#3b8ab5", "#a6e0f2"], ["#16304a", "#0e2036", "#2a4a6c"]];
+
+  // Nihonbashi: expressway overhead, stone bridge, the zero-kilometre marker
+  function drawNihonbashiBack(a) {
+    const ax = FXAX.nihonbashi, R = RX(), n = isNight(); if (Math.abs(ax - a) > 700) return;
+    for (let x = -12; x < W + 12; x += 26) {
+      const rx = a + (x - R), p = pres(ax, 560, x); if (p < 0.2) continue;
+      const wi = Math.floor(rx / 26), h = Math.round((34 + hash(wi + 90) * 34) * Math.min(1, p * 1.6));
+      const c = ["#8d98ad", "#9aa3b8", "#788398"][wi & 1 ? 0 : (wi & 2 ? 1 : 2)];
+      rect(x, 90 - h, 22, h + 14, c);
+      for (let wy = 90 - h + 4; wy < 96; wy += 7) for (let wx = x + 3; wx < x + 19; wx += 6) rect(wx, wy, 3, 4, n ? (hash(wx * 3 + wy + wi) < 0.6 ? "#ffd070" : "#3a4258") : "#bfe0f2");
+    }
+    waterBand(ax, 240, 8, RIVER[0], RIVER[1]);
+    for (let x = 0; x < W; x++) {
+      const p = pres(ax, 640, x); if (p < 0.05) continue;
+      rect(x, 14, 1, 9, "#7b8196"); rect(x, 23, 1, 2, "#4d5266"); rect(x, 12, 1, 2, "#9aa0b4");
+    }
+    for (let rxp = Math.floor((a - 300) / 110) * 110; rxp < a + 420; rxp += 110) {
+      const x = R + (rxp - a); if (x < -8 || x > W + 8 || pres(ax, 640, x) < 0.3) continue;
+      rect(x - 3, 25, 6, 79, "#666b7d"); rect(x - 4, 25, 8, 3, "#4d5266");
+    }
+  }
+  function drawNihonbashiFront(a) {
+    const ax = FXAX.nihonbashi, R = RX(), n = isNight(), x0 = R + (ax - 150 - a), x1 = R + (ax + 150 - a);
+    if (x1 < -10 || x0 > W + 10) return;
+    const L = Math.max(0, x0), Rr = Math.min(W, x1);
+    rect(L, 97, Rr - L, 7, "#c9c7bf"); rect(L, 97, Rr - L, 1, "#e6e4dc");
+    for (let xx = Math.ceil(L / 4) * 4; xx < Rr; xx += 4) rect(xx, 99, 1, 5, "#a8a69e");
+    rect(x0 - 3, 90, 6, 14, "#b8b6ae"); rect(x1 - 3, 90, 6, 14, "#b8b6ae");
+    for (let j = -2; j <= 2; j += 2) {
+      const lx = R + (ax + j * 55 - a); if (lx < -6 || lx > W + 6) continue;
+      rect(lx, 80, 2, 17, "#4a6a5a"); rect(lx - 2, 76, 6, 4, n ? "#ffe27a" : "#d8e0c8"); rect(lx - 3, 75, 8, 1, "#4a6a5a");
+    }
+    const mx = R + (ax - a);
+    if (mx > -14 && mx < W + 14) {
+      rect(mx - 10, 80, 20, 11, "#1f5f3a"); rect(mx - 9, 81, 18, 9, "#2b7a4c"); rect(mx - 1, 91, 2, 7, "#6a4a2b");
+      ctx.fillStyle = "#fff"; ctx.font = "8px DotGothic16, monospace"; ctx.textBaseline = "top"; ctx.fillText("0km", mx - 9, 82);
+    }
+  }
+
+  // Yokohama: bay, far skyline, cable-stayed bridge, Ferris wheel, ship
+  function drawYokohamaBack(a) {
+    const ax = FXAX.yokohama, R = RX(), n = isNight(), rel = ax - a; if (Math.abs(rel) > 760) return;
+    const k = sstep(1 - Math.abs(rel) / 760);
+    for (let x = -10; x < W + 10; x += 9) {
+      const rx = a + (x - R), p = pres(ax, 560, x); if (p < 0.1) continue;
+      const wi = Math.floor(rx / 9), h = Math.round((8 + hash(wi + 400) * 30) * p);
+      rect(x, 90 - h, 8, h + 4, n ? "#1b2440" : mix("#8a97b8", "#c8d2ea", hash(wi + 410)));
+      if (n) for (let wy = 90 - h + 3; wy < 88; wy += 4) if (hash(wi * 7 + wy) < 0.6) rect(x + 2, wy, 1, 2, "#ffd57a");
+    }
+    const bx = R + rel * 0.8 - 30;
+    if (k > 0.05) {
+      rect(bx - 160, 85, 380, 3, n ? "#3a4566" : "#9aa4be");
+      [bx, bx + 90].forEach(tx => {
+        rect(tx - 2, 38, 4, 47, n ? "#4a5578" : "#b8c0d6");
+        for (let i = -7; i <= 7; i++) if (i) pline(tx, 42, tx + i * 9, 85, 1, n ? "#59668f" : "#c8cfe0");
+      });
+    }
+    waterBand(ax, 540, 14, SEA[0], SEA[1]);
+    if (n) for (let j = 0; j < 18; j++) {
+      const x = Math.floor(hash(j + 500) * W), p = pres(ax, 540, x); if (p < 0.4 || Math.sin(T * 2 + j) < -0.2) continue;
+      rect(x, 94 + Math.floor(hash(j + 520) * 8), 1, 3, ["#ffd57a", "#ff8fa8", "#7fd8ff"][j % 3]);
+    }
+    const wx0 = R + rel * 0.6 + 50, wy0 = 52, rad = 25;
+    if (wx0 > -40 && wx0 < W + 40) {
+      pline(wx0 - 11, 90, wx0, wy0, 2, "#cfd3dc"); pline(wx0 + 11, 90, wx0, wy0, 2, "#cfd3dc");
+      for (let i = 0; i < 28; i++) { const g = i / 28 * Math.PI * 2; rect(wx0 + Math.cos(g) * rad, wy0 + Math.sin(g) * rad, 1, 1, n ? "#ffe9a8" : "#f2f2f2"); }
+      for (let i = 0; i < 12; i++) {
+        const g = T * 0.25 + i * Math.PI / 6, gx = wx0 + Math.cos(g) * rad, gy = wy0 + Math.sin(g) * rad;
+        pline(wx0, wy0, gx, gy, 1, n ? "#8a7ab0" : "#e8e8ee"); rect(gx - 2, gy - 1, 4, 4, n ? "#ffd57a" : ["#ff6b6b", "#ffd23f", "#4cc9f0", "#7be0a0", "#c77dff"][i % 5]);
+      }
+    }
+    const sx = R + rel * 0.9 + 110 + Math.sin(T * 0.2) * 12;
+    if (sx > -30 && sx < W + 30 && pres(ax, 540, sx) > 0.5) {
+      rect(sx - 12, 96, 26, 4, "#8a2f2f"); rect(sx - 8, 91, 14, 5, "#f2f2ee"); rect(sx - 2, 86, 4, 5, "#d8d8d4"); rect(sx - 12, 96, 26, 1, "#222");
+    }
+  }
+
+  // Hakone: steep autumn mountains, steam, a lake with a red torii, cedar avenue
+  function drawHakoneBack(a) {
+    const ax = FXAX.hakone, R = RX(), rel = ax - a; if (Math.abs(rel) > 820) return;
+    const k = sstep(1 - Math.abs(rel) / 820), si = seasonIdx();
+    const mcol = ["#7aa86a", "#3f7f49", "#c4642f", "#cfd8e2"][si], mdark = mix(mcol, "#1b2a22", 0.35);
+    for (let x = 0; x < W; x++) {
+      const wx = x + a * 0.5, h = Math.round(60 * k * (0.62 + 0.3 * Math.sin(wx * 0.021 + 1) + 0.12 * Math.sin(wx * 0.07)));
+      ctx.fillStyle = mcol; ctx.fillRect(x, 104 - h, 1, h); ctx.fillStyle = mdark; ctx.fillRect(x, 104 - Math.round(h * 0.4), 1, Math.round(h * 0.4));
+      if ((wx | 0) % 11 < 2) { ctx.fillStyle = mix(mcol, "#ffffff", 0.2); ctx.fillRect(x, 104 - h, 1, 3); }
+    }
+    for (let v = 0; v < 3; v++) {
+      const vx = R + (ax + (v - 1) * 130 - a) * 0.8;
+      for (let i = 0; i < 7; i++) {
+        const t = ((T * 9 + i * 9 + v * 13) % 62), py = 98 - t, sw = Math.sin(T * 1.3 + i + v) * (2 + t * 0.1), sz = 4 + t * 0.08;
+        ctx.fillStyle = "rgba(255,255,255," + (0.5 * (1 - t / 62) * k).toFixed(2) + ")"; ctx.fillRect(Math.round(vx + sw), Math.round(py), Math.round(sz), Math.round(sz * 0.7));
+      }
+    }
+    if (waterBand(ax, 380, 11, LAKE[0], LAKE[1])) {
+      const tx = R + (ax - a) * 0.9 + 30, p = pres(ax, 380, tx);
+      if (p > 0.4) { rect(tx - 7, 86, 2, 18, "#d4412f"); rect(tx + 6, 86, 2, 18, "#d4412f"); rect(tx - 10, 83, 21, 3, "#1c1c1c"); rect(tx - 9, 86, 19, 2, "#d4412f"); rect(tx - 7, 90, 15, 1, "#d4412f"); }
+    }
+  }
+  function drawHakoneFront(a) {
+    const ax = FXAX.hakone, R = RX(), si = seasonIdx(); if (Math.abs(ax - a) > 700) return;
+    const g = ["#2f6a45", "#1f5a38", "#4a5a2a", "#3a5a4a"][si];
+    for (let rx = Math.floor((a - 300) / 95) * 95; rx < a + 420; rx += 95) {
+      if (Math.abs(rx - ax) > 520) continue; const x = R + (rx - a);
+      rect(x - 1, 70, 3, 40, "#4a3426");
+      for (let t = 0; t < 5; t++) rect(x - 9 + t * 2, 56 + t * 9, 19 - t * 4, 10, t % 2 ? g : mix(g, "#0f2a1a", 0.3));
+    }
+  }
+
+  // Hamanako: lake with the big red torii on Benten island, pine-lined shore
+  function drawHamanakoBack(a) {
+    const ax = FXAX.hamanako, R = RX(), n = isNight(); if (Math.abs(ax - a) > 760) return;
+    waterBand(ax, 660, 16, LAKE[0], LAKE[1]);
+    const x = R + (ax - a) * 0.9, p = pres(ax, 660, x);
+    if (p > 0.3) {
+      rect(x - 15, 58, 5, 46, "#d4412f"); rect(x + 11, 58, 5, 46, "#d4412f"); rect(x - 22, 52, 44, 5, "#1c1c1c"); rect(x - 20, 57, 40, 4, "#d4412f"); rect(x - 15, 70, 31, 3, "#d4412f");
+      if (n) { ctx.globalAlpha = 0.18; ctx.fillStyle = "#ffb070"; ctx.fillRect(x - 24, 48, 48, 56); ctx.globalAlpha = 1; }
+    }
+    if (!n) for (let j = 0; j < 4; j++) {
+      const bx = ((T * 22 + j * 90) % 360) - 50, by = 40 + j * 7 + Math.sin(T * 3 + j) * 2, fl = Math.sin(T * 9 + j) > 0 ? 1 : 0;
+      rect(bx, by, 2, 1, "#f4f4f4"); rect(bx - 2, by - 1 + fl, 2, 1, "#f4f4f4"); rect(bx + 2, by - 1 + fl, 2, 1, "#f4f4f4");
+    }
+  }
+  function drawHamanakoFront(a) {
+    const ax = FXAX.hamanako, R = RX(); if (Math.abs(ax - a) > 700) return;
+    for (let rx = Math.floor((a - 300) / 58) * 58; rx < a + 420; rx += 58) {
+      if (Math.abs(rx - ax) > 520) continue; const x = R + (rx - a), s = hash(Math.floor(rx / 58) + 600);
+      rect(x - 1, 86, 3, 24, "#4a3426"); rect(x - 1 + (s < 0.5 ? 3 : -4), 78, 3, 10, "#4a3426");
+      rect(x - 11, 74, 22, 7, "#2a5a34"); rect(x - 7, 68, 14, 7, "#2f6a3c"); rect(x - 14, 82, 12, 5, "#2a5a34"); rect(x + 4, 80, 12, 5, "#2f6a3c");
+    }
+  }
+
+  // Nagoya Castle: stone base, white keep with green roofs and golden shachihoko
+  function drawNagoyaFx(a) {
+    const ax = FXAX.nagoya, R = RX(), n = isNight(), x = R + (ax - a) * 0.6; if (x < -90 || x > W + 90) return;
+    for (let r = 0; r < 18; r++) { const half = 38 + r * 0.7; rect(x - half, 86 + r, half * 2, 1, r % 4 === 0 ? "#8f8f86" : "#b4b4aa"); }
+    const roof = "#4f9a82", wall = "#f4f2ea";
+    rect(x - 24, 68, 48, 18, wall); rect(x - 29, 63, 58, 5, roof); rect(x - 32, 62, 4, 2, roof); rect(x + 28, 62, 4, 2, roof);
+    rect(x - 16, 50, 32, 13, wall); rect(x - 21, 46, 42, 4, roof); rect(x - 23, 45, 3, 2, roof); rect(x + 20, 45, 3, 2, roof);
+    rect(x - 9, 35, 18, 11, wall); rect(x - 14, 31, 28, 4, roof);
+    rect(x - 6, 26, 12, 5, roof); rect(x - 4, 23, 8, 3, roof);
+    rect(x - 9, 19, 3, 8, "#ffcf3a"); rect(x + 6, 19, 3, 8, "#ffcf3a"); rect(x - 10, 18, 2, 3, "#ffcf3a"); rect(x + 8, 18, 2, 3, "#ffcf3a");
+    if (Math.sin(T * 2.2) > 0.85) { rect(x - 9, 19, 1, 1, "#fff"); rect(x + 7, 20, 1, 1, "#fff"); }
+    for (let i = 0; i < 4; i++) rect(x - 19 + i * 11, 74, 5, 6, n ? "#ffd57a" : "#6a6a70");
+    for (let i = 0; i < 3; i++) rect(x - 11 + i * 9, 54, 4, 5, n ? "#ffd57a" : "#6a6a70");
+    for (let i = 0; i < 2; i++) rect(x - 5 + i * 6, 38, 3, 4, n ? "#ffd57a" : "#6a6a70");
+    if (n) { ctx.globalAlpha = 0.13; ctx.fillStyle = "#ffe9a8"; ctx.fillRect(x - 52, 14, 104, 90); ctx.globalAlpha = 1; }
+    for (let xx = 0; xx < W; xx++) {
+      const p = pres(ax, 420, xx); if (p < 0.3) continue;
+      rect(xx, 97, 1, 7, (xx + Math.floor(a)) % 14 < 1 ? "#8a8a82" : "#aaa59a");
+      if ((xx + Math.floor(a)) % 28 < 14) rect(xx, 100, 1, 1, "#8a8a82");
+    }
+  }
+
+  // Suzuka pass: conifer ridges and rolling fog, a stone lantern by the road
+  function drawSuzukaBack(a) {
+    const ax = FXAX.suzuka, R = RX(), rel = ax - a, si = seasonIdx(); if (Math.abs(rel) > 820) return;
+    const k = sstep(1 - Math.abs(rel) / 820);
+    const base = ["#3e6a4a", "#2e5c3a", "#a3552d", "#9fb4b0"][si];
+    for (let L = 0; L < 2; L++) {
+      const f = L ? 0.55 : 0.3, col = mix(base, "#0f1d1a", L ? 0.15 : 0.4); ctx.fillStyle = col;
+      for (let x = 0; x < W; x++) {
+        const wx = x + a * f, h = Math.round((34 + 16 * L) * k * (0.55 + 0.45 * Math.abs(Math.sin(wx * 0.04 + L))) + ((wx | 0) % 9 < 4 ? 3 : 0) * k);
+        ctx.fillRect(x, 104 - h, 1, h);
+      }
+    }
+    for (let j = 0; j < 4; j++) {
+      const x0 = ((T * 5 + j * 95) % 400) - 90;
+      const yy = 52 + j * 12, xx = Math.round(x0);
+      ctx.fillStyle = "rgba(235,240,245," + (0.12 * k).toFixed(2) + ")"; ctx.fillRect(xx - 12, yy - 3, 174, 14);
+      ctx.fillStyle = "rgba(235,240,245," + (0.2 * k).toFixed(2) + ")"; ctx.fillRect(xx, yy, 150, 8);
+    }
+  }
+  function drawSuzukaFront(a) {
+    const ax = FXAX.suzuka, R = RX(), n = isNight(), x = R + (ax - a), k = sstep(1 - Math.abs(ax - a) / 700);
+    if (x > -14 && x < W + 14) {
+      rect(x - 4, 102, 9, 3, "#8a8a86"); rect(x - 1, 93, 3, 9, "#9a9a96"); rect(x - 5, 86, 11, 7, "#9a9a96"); rect(x - 3, 88, 7, 4, n ? "#ffd57a" : "#4a4a4e"); rect(x - 7, 83, 15, 3, "#74746f"); rect(x - 1, 80, 3, 3, "#8a8a86");
+    }
+    if (k > 0.02) { ctx.fillStyle = "rgba(235,240,245," + (0.2 * k).toFixed(2) + ")"; ctx.fillRect(0, 92, W, 20); }
+  }
+
+  // Sanjo Ohashi: wooden bridge over the Kamo river, machiya on the far bank
+  function drawSanjoBack(a) {
+    const ax = FXAX.sanjo, R = RX(), n = isNight(), si = seasonIdx(); if (Math.abs(ax - a) > 700) return;
+    waterBand(ax, 340, 14, RIVER[0], RIVER[1]);
+    for (let x = -10; x < W + 10; x += 17) {
+      const rx = a + (x - R), p = pres(ax, 340, x); if (p < 0.3) continue;
+      const wi = Math.floor(rx / 17), h = 10 + Math.floor(hash(wi + 800) * 6);
+      rect(x, 90 - h, 15, h, "#5a4636"); rect(x - 1, 87 - h, 17, 3, "#2e2a2a");
+      for (let j = 0; j < 3; j++) rect(x + 2 + j * 4, 94 - h, 1, 5, n ? "#ffd57a" : "#3a2e24");
+      if (hash(wi + 820) < 0.5) { rect(x + 5, 74 - h + 3, 2, 9, "#4a3426"); rect(x - 1, 70 - h + 3, 14, 8, TREE[si]); }
+    }
+  }
+  function drawSanjoFront(a) {
+    const ax = FXAX.sanjo, R = RX(); if (Math.abs(ax - a) > 700) return;
+    const x0 = R + (ax - 300 - a), x1 = R + (ax + 300 - a), L = Math.max(0, x0), Rr = Math.min(W, x1);
+    if (Rr > L) { rect(L, 100, Rr - L, 2, "#6a4a30"); rect(L, 106, Rr - L, 1, "#6a4a30"); }
+    for (let rx = Math.floor((ax - 300) / 22) * 22; rx <= ax + 300; rx += 22) {
+      const x = R + (rx - a); if (x < -4 || x > W + 4) continue;
+      rect(x, 97, 3, 11, "#5b3d28"); rect(x - 1, 94, 5, 3, "#e8d9a0"); rect(x, 93, 3, 1, "#e8d9a0");
+    }
+  }
+
+  // Fushimi: tunnel of red torii and a sake brewery with a cedar ball
+  function drawFushimiBack(a) {
+    const ax = FXAX.fushimi, R = RX(), rel = ax - a, si = seasonIdx(); if (Math.abs(rel) > 760) return;
+    const k = sstep(1 - Math.abs(rel) / 760), c = mix(["#4a8a52", "#2d6a3a", "#b0652f", "#8fa898"][si], "#14301e", 0.25);
+    ctx.fillStyle = c;
+    for (let x = 0; x < W; x++) { const wx = x + a * 0.3, h = Math.round(46 * k * (0.7 + 0.3 * Math.sin(wx * 0.03) + 0.1 * Math.sin(wx * 0.09))); ctx.fillRect(x, 104 - h, 1, h); }
+  }
+  function drawFushimiFront(a) {
+    const ax = FXAX.fushimi, R = RX(), n = isNight(); if (Math.abs(ax - a) > 620) return;
+    for (let rx = Math.floor((ax - 260) / 26) * 26; rx <= ax + 260; rx += 26) {
+      const x = R + (rx - a); if (x < -30 || x > W + 30) continue;
+      const al = clamp((260 - Math.abs(rx - ax)) / 70, 0, 1); ctx.globalAlpha = al;
+      rect(x - 1, 62, 3, 46, "#d4412f"); rect(x - 14, 56, 28, 4, "#1c1c1c"); rect(x - 13, 60, 26, 3, "#d4412f"); rect(x - 10, 72, 21, 2, "#d4412f");
+      if (n) { ctx.globalAlpha = al * 0.25; ctx.fillStyle = "#ffb070"; ctx.fillRect(x - 12, 62, 24, 46); }
+    }
+    ctx.globalAlpha = 1;
+    const x = R + (ax + 60 - a);
+    if (x > -70 && x < W + 70) {
+      rect(x, 70, 60, 34, "#f1efe4"); rect(x - 3, 64, 66, 7, "#33302e"); rect(x + 8, 80, 6, 24, "#4a3a2a"); rect(x + 18, 80, 6, 24, "#4a3a2a");
+      rect(x + 36, 72, 10, 10, "#4f8a3a"); rect(x + 37, 73, 8, 8, "#6aa84c"); rect(x + 40, 70, 1, 2, "#333");
+      rect(x + 28, 86, 24, 9, "#2b3a67"); ctx.fillStyle = "#fff"; ctx.font = "8px DotGothic16, monospace"; ctx.textBaseline = "top"; ctx.fillText("酒", x + 36, 87);
+    }
+  }
+  function drawBackFx(a) {
+    drawFujiFx(a); drawBiwaFx(a); drawNihonbashiBack(a); drawYokohamaBack(a); drawHakoneBack(a); drawHamanakoBack(a); drawSuzukaBack(a); drawSanjoBack(a); drawFushimiBack(a);
+  }
+  function drawFrontFx(a) {
+    drawNihonbashiFront(a); drawNagoyaFx(a); drawHakoneFront(a); drawHamanakoFront(a); drawSuzukaFront(a); drawSanjoFront(a); drawFushimiFront(a); drawTsutenFx(a);
+  }
+
+  function drawParts(dt) {
+    const si = seasonIdx();
+    if (si === 1) return;
+    const col = ["#ffd6e4", "", "#f0933a", "#ffffff"][si];
+    const wind = -S.dir * BASE_SPEED * mult * 0.35;
+    for (const p of parts) {
+      p.x += (wind + (si === 0 ? -10 : -4)) * dt; p.y += p.v * dt * (si === 3 ? 1.1 : 0.7);
+      if (p.x < -2) p.x += W + 4; if (p.x > W + 2) p.x -= W + 4; if (p.y > H) { p.y = -2; p.x = Math.random() * W; }
+      rect(p.x, p.y, si === 3 ? 1 : 2, si === 3 ? 1 : 1, col);
+    }
+  }
+
+  function render(dt) {
+    const a = aRoute();
+    drawSky(a);
+    ridge(a, 0.12, 30, 18, mix("#6d7fa6", isNight() ? "#101830" : "#c8d4ee", isNight() ? 0.5 : 0.1), 1.3);
+    ridge(a, 0.28, 18, 14, mix("#5a6c8e", isNight() ? "#0c1228" : "#aab8da", isNight() ? 0.55 : 0.05), 4.1);
+    drawBackFx(a);
+    drawBuildings(a);
+    drawGround(a);
+    drawSpotsAndSigns(a);
+    drawRunner();
+    drawParts(dt);
+    drawConfetti(dt);
+    if (isNight()) { ctx.fillStyle = "rgba(8,12,40,.34)"; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // ---------- pad drawing ----------
+  function sizePad() {
+    const r = pad.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    pad.width = Math.max(1, Math.round(r.width * dpr)); pad.height = Math.max(1, Math.round(r.height * dpr));
+    pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function drawPad() {
+    const r = pad.getBoundingClientRect(), t = now();
+    pctx.clearRect(0, 0, r.width, r.height);
+    while (trail.length && t - trail[0].t > 0.7) trail.shift();
+    pctx.lineCap = "round"; pctx.lineJoin = "round";
+    for (let i = 1; i < trail.length; i++) {
+      const age = (t - trail[i].t) / 0.7;
+      pctx.strokeStyle = "rgba(255,180,84," + (0.85 * (1 - age)).toFixed(3) + ")";
+      pctx.lineWidth = 10 * (1 - age) + 2;
+      pctx.beginPath(); pctx.moveTo(trail[i - 1].x, trail[i - 1].y); pctx.lineTo(trail[i].x, trail[i].y); pctx.stroke();
+    }
+  }
+
+  // ---------- game logic ----------
+  function curPref(km) { let n = PREFS[0][1]; for (const p of PREFS) if (km >= p[0]) n = p[1]; return n; }
+  let passTimer = 0;
+  function passNote(t) { const el = $("passTxt"); el.textContent = t; clearTimeout(passTimer); passTimer = setTimeout(() => { el.textContent = ""; }, 2200); }
+  function showSeal(name) {
+    const el = $("seal"); el.textContent = name.slice(0, 3); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  }
+  function checkSpots(prevA, newA) {
+    const lo = Math.min(prevA, newA), hi = Math.max(prevA, newA);
+    SPOTS.forEach(sp => { const ax = sp[0] * PX_PER_KM; if (ax > lo && ax <= hi && sp[3] === "tsuten") { burst(RX(), 60, 70); snd("fanfare", seasonIdx()); } });
+    STATIONS.forEach((st, i) => {
+      const ax = st.km * PX_PER_KM;
+      if (!(ax > lo && ax <= hi)) return;
+      if (!S.seen.includes(i)) S.seen.push(i);
+      if (st.season === seasonIdx()) {
+        if (!S.stamps.includes(i)) { S.stamps.push(i); showSeal(st.name); snd("stamp"); burst(RX(), 70, 14); passNote(st.name + "宿 スタンプ獲得"); }
+        else passNote(st.name + "宿 (取得済み)");
+      } else passNote(st.name + "宿 を通過");
+    });
+  }
+  function update(dt) {
+    const rate = revPerSec(); revRate = rate;
+    const target = Math.min(MAX_MULT, rate / STD_REV);
+    mult += (target - mult) * (1 - Math.exp(-dt * (target > mult ? ACCEL : COAST)));
+    if (mult < 0.03 && target === 0) mult = 0;
+    phase += dt * Math.pow(mult, 0.75) * 15;
+    const sIdx = Math.floor(phase / Math.PI); if (sIdx !== lastStepIdx) { lastStepIdx = sIdx; if (mult > 0.04) snd("step", mult); }
+    if (AUD && !muted) AUD.ambience(audioState().water, audioState().wind);
+    const prevA = aRoute();
+    S.d += BASE_SPEED * mult * dt; S.totalSec += dt * (mult > 0 ? 1 : 0);
+    if (S.d >= LEG) {
+      S.d = LEG; checkSpots(prevA, aRoute()); burst(RX(), 40, 60); snd("fanfare", seasonIdx());
+      if (S.dir > 0) { S.dir = -1; S.d = 0; toast("大阪に到着！ここから夜の復路"); }
+      else { S.dir = 1; S.d = 0; S.rounds++; snd("season", seasonIdx()); toast(SEASONS[S.rounds % 4] + "になった" + (S.rounds % 4 === 0 ? "（" + (Math.floor(S.rounds / 4) + 1) + "年目）" : "")); }
+      save(); return;
+    }
+    checkSpots(prevA, aRoute()); cardCheck(aRoute());
+  }
+  function hud() {
+    const km = Math.round(aRoute() / PX_PER_KM);
+    $("hKm").textContent = km;
+    $("hPref").textContent = curPref(km);
+    $("hSeason").textContent = SEASONS[seasonIdx()] + "・" + (S.dir > 0 ? "往路(昼)" : "復路(夜)");
+    mk.style.left = (aRoute() / LEG * 100).toFixed(2) + "%";
+    $("nextTxt").textContent = nextText(aRoute() / PX_PER_KM);
+    spotDots.forEach((e, i) => e.classList.toggle("got", S.stamps.includes(i)));
+    $("hStamp").textContent = S.stamps.length + "/" + STATIONS.length;
+    $("hYear").textContent = (Math.floor(S.rounds / 4) + 1) + "年目";
+    $("rpm").textContent = "回転 " + revRate.toFixed(1) + "回/秒 ・ 速度 ×" + mult.toFixed(2);
+    $("gfill").style.width = (mult / MAX_MULT * 100).toFixed(1) + "%";
+  }
+
+  // ---------- loop with tab pause ----------
+  let last = null, saveAcc = 0, raf = 0;
+  function frame(ts) {
+    raf = requestAnimationFrame(frame);
+    if (last === null) { last = ts; }
+    let dt = (ts - last) / 1000; last = ts;
+    if (dt > 0.05) dt = 0.05;                       // after a stall, never jump ahead
+    T = ts / 1000; update(dt); render(dt); drawPad(); hud();
+    saveAcc += dt; if (saveAcc > 2) { saveAcc = 0; save(); }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { save(); last = null; turns.length = 0; active = false; mult = 0; if (AUD) AUD.ctx.suspend(); }
+    else { last = null; if (AUD && !muted) AUD.ctx.resume(); }
+  });
+  window.addEventListener("pagehide", save);
+  window.addEventListener("resize", sizePad);
+
+  // ---------- sound engine (WebAudio synthesis, no audio files) ----------
+  const MUSIC = [
+    { root: 62, sc: [0, 2, 4, 7, 9], mel: [[4,-1,5,-1,7,-1,5,4, 2,-1,4,-1,5,-1,-1,-1], [7,-1,8,-1,7,5,4,-1, 5,-1,4,2,0,-1,-1,-1]] },      // spring: D major pentatonic
+    { root: 67, sc: [0, 2, 4, 7, 9], mel: [[7,-1,6,-1,7,8,9,-1, 7,-1,5,-1,4,-1,5,-1], [5,-1,7,-1,8,-1,7,5, 4,-1,2,4,5,-1,-1,-1]] },        // summer: G major pentatonic
+    { root: 57, sc: [0, 3, 5, 7, 10], mel: [[5,-1,6,-1,8,-1,6,5, 3,-1,5,-1,6,-1,-1,-1], [8,-1,7,-1,6,-1,5,-1, 3,-1,2,3,5,-1,-1,-1]] },    // autumn: A minor pentatonic
+    { root: 64, sc: [0, 3, 5, 7, 10], mel: [[3,-1,-1,5,-1,-1,6,-1, 5,-1,-1,3,-1,-1,2,-1], [6,-1,-1,8,-1,-1,6,-1, 5,-1,3,-1,2,-1,-1,-1]] }  // winter: E minor pentatonic, sparse
+  ];
+  const CHORD = [0, -3, -5, -3];
+  const STINGER = { fuji: [0, 7, 12, 16], biwa: [7, 4, 0], tsuten: [0, 4, 7, 12, 7, 12], hamanako: [0, 7, 12], yokohama: [0, 4, 7, 11], def: [0, 7, 12] };
+  const mf = m => 440 * Math.pow(2, (m - 69) / 12);
+  function makeAudio(ctx, getState, realtime) {
+    const E = {};
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
+    const master = ctx.createGain(); master.gain.value = 0.8; master.connect(comp); comp.connect(ctx.destination);
+    const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(master);
+    E.analyser = ctx.createAnalyser(); E.analyser.fftSize = 1024; comp.connect(E.analyser);
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    function tone(freq, t, dur, type, gain, opts) {
+      opts = opts || {};
+      const o = ctx.createOscillator(), g = ctx.createGain(), a = opts.a || 0.01;
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gain, t + a);
+      if (opts.hold) g.gain.setValueAtTime(gain, t + dur * 0.65);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(opts.dest || bus); o.start(t); o.stop(t + dur + 0.05);
+    }
+    function burst(t, dur, gain, ftype, freq, q) {
+      const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      s.buffer = nb; f.type = ftype; f.frequency.value = freq; f.Q.value = q || 0.8;
+      g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f); f.connect(g); g.connect(bus); s.start(t, Math.random() * 1.5, dur + 0.02);
+    }
+    let next = ctx.currentTime + 0.1, idx = 0;
+    function step(i, t) {
+      const st = getState(t), M = MUSIC[st.season], run = clamp(st.mult / 0.8, 0, 1);
+      const bpm = lerp(78, 126, clamp(st.mult / 2, 0, 1)) * (st.night ? 0.92 : 1), iv = 60 / bpm / 4;
+      const bar = (i >> 4) & 3, s = i & 15, root = M.root + (st.night ? -12 : 0), cr = root + CHORD[bar];
+      if (s === 0) [0, 7, 14].forEach(n => tone(mf(cr + n - 12), t, iv * 16.5, "sine", 0.022, { a: 0.5, hold: true }));
+      if (run > 0.05) {
+        if (s === 0 || s === 8) tone(mf(cr - 12), t, iv * 3, "triangle", 0.15 * run);
+        if (s === 6 || s === 14) tone(mf(cr - 5), t, iv * 2, "triangle", 0.1 * run);
+        if (s & 1) burst(t, 0.04, 0.05 * run, "highpass", 6500, 0.7);
+        const ix = M.mel[(i >> 4) & 1][s];
+        if (ix >= 0 && run > 0.12) tone(mf(root + M.sc[ix % 5] + 12 * Math.floor(ix / 5) + 12), t, iv * 1.9, st.night ? "sine" : "triangle", 0.085 * run, { a: 0.012 });
+      }
+      if (st.mult > 0.55 && (s === 0 || s === 8)) {
+        const o = ctx.createOscillator(), g = ctx.createGain(), k = clamp((st.mult - 0.55) / 0.6, 0, 1);
+        o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+        g.gain.setValueAtTime(0.22 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+        o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.16);
+      }
+      return iv;
+    }
+    E.scheduleUntil = limit => { while (next < limit) { next += step(idx++, next); } };
+    // ambience: water and wind (looped noise, level follows how close you are to the scene)
+    function loopNoise(ftype, freq, q) {
+      const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+      s.buffer = nb; s.loop = true; f.type = ftype; f.frequency.value = freq; f.Q.value = q; g.gain.value = 0;
+      s.connect(f); f.connect(g); g.connect(master); s.start(); return g;
+    }
+    let waterG = null, windG = null, timer = 0;
+    E.start = () => {
+      if (realtime) {
+        waterG = loopNoise("bandpass", 520, 0.6); windG = loopNoise("lowpass", 360, 0.7);
+        next = ctx.currentTime + 0.1; timer = setInterval(() => E.scheduleUntil(ctx.currentTime + 0.25), 40);
+      }
+    };
+    E.ambience = (water, wind) => {
+      if (!waterG) return; const t = ctx.currentTime, w = 0.8 + 0.2 * Math.sin(t * 0.9);
+      waterG.gain.setTargetAtTime(0.1 * water * w, t, 0.4); windG.gain.setTargetAtTime(0.12 * wind * (0.7 + 0.3 * Math.sin(t * 0.5)), t, 0.5);
+    };
+    E.setMuted = m => master.gain.setTargetAtTime(m ? 0 : 0.8, ctx.currentTime, 0.05);
+    E.step = (vol, t) => { t = t || ctx.currentTime; burst(t, 0.045, 0.07 * clamp(vol, 0.3, 1.4), "bandpass", 1100, 0.9); };
+    E.stamp = t => {
+      t = t || ctx.currentTime;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(190, t); o.frequency.exponentialRampToValueAtTime(60, t + 0.12);
+      g.gain.setValueAtTime(0.35, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.2);
+      tone(988, t + 0.06, 0.55, "sine", 0.16); tone(1480, t + 0.06, 0.4, "sine", 0.08); tone(1976, t + 0.12, 0.3, "triangle", 0.05);
+    };
+    E.fanfare = (season, t) => {
+      t = t || ctx.currentTime; const r = MUSIC[season].root + 12;
+      [0, 4, 7, 12, 16].forEach((n, i) => tone(mf(r + n), t + i * 0.09, 0.4, "square", 0.05));
+      [0, 4, 7, 12].forEach(n => tone(mf(r + n), t + 0.5, 0.9, "triangle", 0.08));
+    };
+    E.season = (season, t) => {
+      t = t || ctx.currentTime; const M = MUSIC[season];
+      [0, 2, 4].forEach((ix, i) => tone(mf(M.root + 12 + M.sc[ix % 5] + 12 * Math.floor(ix / 5)), t + i * 0.18, 0.7, "triangle", 0.09));
+    };
+    E.card = (kind, season, t) => {
+      t = t || ctx.currentTime; const r = MUSIC[season].root + 12;
+      (STINGER[kind] || STINGER.def).forEach((n, i) => tone(mf(r + n), t + i * 0.14, 0.55, "sine", 0.1));
+    };
+    return E;
+  }
+  let AUD = null, muted = false, lastStepIdx = 0;
+  try { muted = localStorage.getItem("hashiru-mute") === "1"; } catch (e) {}
+  function audioState() {
+    const a = aRoute();
+    const near = (k, R) => sstep(1 - Math.abs(FXAX[k] - a) / R);
+    return {
+      mult, season: seasonIdx(), night: isNight(),
+      water: Math.max(near("yokohama", 650), near("biwa", 650), near("hamanako", 650), near("hakone", 500), near("sanjo", 450), near("nihonbashi", 300) * 0.5),
+      wind: Math.max(near("suzuka", 650), near("fuji", 700), near("hakone", 500) * 0.6)
+    };
+  }
+  function ensureAudio() {
+    if (AUD || muted) { if (AUD && AUD.ctx.state === "suspended" && !muted) AUD.ctx.resume(); return; }
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ctx = new AC(); AUD = makeAudio(ctx, audioState, true); AUD.ctx = ctx; AUD.start(); if (ctx.state === "suspended") ctx.resume();
+    } catch (e) { AUD = null; }
+  }
+  const snd = (name, ...args) => { if (AUD && !muted) try { AUD[name](...args); } catch (e) {} };
+
+  // ---------- route bar: where you are between Tokyo and Osaka ----------
+  const barEl = $("bar"), mk = $("mk"), spotDots = [];
+  PREFS.forEach((p, i) => {
+    const end = i + 1 < PREFS.length ? PREFS[i + 1][0] : KM_TOTAL, seg = document.createElement("s");
+    seg.style.width = ((end - p[0]) / KM_TOTAL * 100) + "%"; barEl.insertBefore(seg, mk);
+  });
+  PREFS.slice(1).forEach(p => { const u = document.createElement("u"); u.style.left = (p[0] / KM_TOTAL * 100) + "%"; barEl.insertBefore(u, mk); });
+  STATIONS.forEach(st => { const e = document.createElement("em"); e.style.left = (st.km / KM_TOTAL * 100) + "%"; barEl.insertBefore(e, mk); spotDots.push(e); });
+  function nextText(km) {
+    let idx = 0; PREFS.forEach((p, i) => { if (km >= p[0]) idx = i; });
+    if (S.dir > 0) {
+      if (idx + 1 < PREFS.length) return "次: " + PREFS[idx + 1][1] + "まで " + Math.max(1, Math.ceil(PREFS[idx + 1][0] - km)) + "km";
+      return "大阪まで あと " + Math.max(0, Math.ceil(KM_TOTAL - km)) + "km";
+    }
+    if (idx > 0) return "次: " + PREFS[idx - 1][1] + "まで " + Math.max(1, Math.ceil(km - PREFS[idx][0])) + "km";
+    return "東京まで あと " + Math.max(0, Math.ceil(km)) + "km";
+  }
+
+  // ---------- reset ----------
+  let armed = 0;
+  $("reset").addEventListener("pointerdown", e => e.stopPropagation());
+  $("reset").addEventListener("click", () => {
+    const b = $("reset");
+    if (!armed) { armed = 1; b.textContent = "もう一度タップで消去"; setTimeout(() => { armed = 0; b.textContent = "最初から"; }, 3000); return; }
+    armed = 0; b.textContent = "最初から";
+    S.rounds = 0; S.dir = 1; S.d = 0; S.stamps = []; S.seen = []; S.totalSec = 0; mult = 0; save(); toast("最初からやり直し");
+  });
+
+  function soundLabel() { $("tSound").textContent = muted ? "音 OFF" : "音 ON"; }
+  soundLabel();
+  $("tSound").addEventListener("click", () => {
+    muted = !muted; try { localStorage.setItem("hashiru-mute", muted ? "1" : "0"); } catch (e) {}
+    if (muted) { if (AUD) { AUD.setMuted(true); AUD.ctx.suspend(); } } else if (AUD) { AUD.setMuted(false); AUD.ctx.resume(); } else ensureAudio();
+    soundLabel();
+  });
+  if (location.hash !== "#debug") ["tSeason", "tNext", "tSt"].forEach(id => { $(id).hidden = true; });
+  $("book").addEventListener("pointerdown", e => e.stopPropagation());
+  function renderBook() {
+    const body = $("bookBody"); body.textContent = "";
+    $("bookTitle").textContent = "宿場スタンプ " + S.stamps.length + "/" + STATIONS.length;
+    PREFS.forEach((p, pi) => {
+      const list = STATIONS.map((st, i) => [st, i]).filter(x => x[0].pref === pi);
+      const h = document.createElement("h3"); h.textContent = p[1] + "  " + list.filter(x => S.stamps.includes(x[1])).length + "/" + list.length; body.appendChild(h);
+      const g = document.createElement("div"); g.className = "grid";
+      list.forEach(([st, i]) => {
+        const c = document.createElement("div"), got = S.stamps.includes(i), seen = S.seen.includes(i);
+        c.className = "chip" + (got ? " got" : seen ? " seen" : "");
+        c.textContent = seen || got ? st.name : "？？";
+        if (seen || got) { const sm = document.createElement("small"); sm.textContent = SEASONS[st.season] + (got ? " 済" : ""); c.appendChild(sm); }
+        g.appendChild(c);
+      });
+      body.appendChild(g);
+    });
+  }
+  $("tBook").addEventListener("click", () => { renderBook(); $("book").hidden = false; });
+  $("bookClose").addEventListener("click", () => { $("book").hidden = true; });
+  $("tSt").addEventListener("click", () => {
+    const a = aRoute(), R = STATIONS.map(st => st.km * PX_PER_KM);
+    if (S.dir > 0) { const c = R.filter(v => v > a + 20); if (c.length) S.d = Math.max(0, Math.min(...c) - 420); }
+    else { const c = R.filter(v => v < a - 20); if (c.length) S.d = Math.min(LEG, LEG - (Math.max(...c) + 420)); }
+    save();
+  });
+  $("tools").addEventListener("pointerdown", e => e.stopPropagation());
+  $("tSeason").addEventListener("click", () => { S.rounds++; toast(SEASONS[S.rounds % 4] + "になった(テスト)"); save(); });
+  $("tNext").addEventListener("click", () => {
+    const a = aRoute(), R = SPOTS.map(sp => sp[0] * PX_PER_KM);
+    if (S.dir > 0) { const c = R.filter(v => v > a + 20); if (c.length) S.d = Math.max(0, Math.min(...c) - 650); }
+    else { const c = R.filter(v => v < a - 20); if (c.length) S.d = Math.min(LEG, LEG - (Math.max(...c) + 650)); }
+    cardFor = -1; save();
+  });
+  sizePad();
+  if (location.hash === "#debug") window.__hashiru = { makeAudio, drawRunnerPx, STATIONS, S, get AUD() { return AUD; }, get mult() { return mult; }, get rev() { return revRate; }, save };   // for local checks
+  requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => {}); });
+}
+</script>
+</body>
+</html>
