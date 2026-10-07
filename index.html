@@ -122,6 +122,19 @@ body {
 [hidden] { display: none !important; }
 html { background: #12141c; }
 #app { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; }
+/* fever mode (after all stamps are collected) */
+.rb { display: none; }
+body.fever #hStamp, #fev {
+  background: linear-gradient(90deg, #ff5d73, #ffd23f, #7be0a0, #4cc9f0, #c77dff, #ff5d73); background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  text-shadow: none; filter: drop-shadow(0 1px 0 rgba(0,0,0,.85)); animation: rainbow 1.6s linear infinite;
+}
+#fev { display: block; font-size: clamp(11px, 3.4vw, 17px); }
+#fev[hidden] { display: none !important; }
+@keyframes rainbow { to { background-position: 200% 0; } }
+body.fever #stageWrap { animation: glow 4s linear infinite; }
+@keyframes glow { 0%, 100% { box-shadow: 0 0 16px 2px #ff5d73; } 20% { box-shadow: 0 0 16px 2px #ffd23f; } 40% { box-shadow: 0 0 16px 2px #7be0a0; } 60% { box-shadow: 0 0 16px 2px #4cc9f0; } 80% { box-shadow: 0 0 16px 2px #c77dff; } }
+@media (prefers-reduced-motion: reduce) { body.fever #hStamp, #fev { animation: none; } body.fever #stageWrap { animation: none; box-shadow: 0 0 16px 2px #c77dff; } }
 </style>
 </head>
 <body>
@@ -134,7 +147,8 @@ html { background: #12141c; }
       <div class="l"><span id="hKm">0</span> km<br><b id="hPref">東京都</b><br><small id="passTxt"></small></div>
       <div class="r"><span id="hSeason">春・往路(昼)</span><br>stamp <b id="hStamp">0/57</b> ・ <span id="hYear">1年目</span>
         <div id="bar" aria-hidden="true"><i id="mk"></i></div>
-        <div id="nextTxt">次: 神奈川県まで 15km</div></div>
+        <div id="nextTxt">次: 神奈川県まで 15km</div>
+        <div id="fev" class="rb" hidden></div></div>
     </div>
     <div id="seal" aria-hidden="true"></div>
     <div id="toast" role="status" aria-live="polite"></div>
@@ -142,7 +156,7 @@ html { background: #12141c; }
   <div id="padWrap">
     <canvas id="pad"></canvas>
     <div id="card" aria-live="polite"></div>
-    <div id="tools"><button id="tSound" type="button">音 ON</button><button id="tSeason" type="button">季節+1</button><button id="tNext" type="button">次の名所</button><button id="tSt" type="button">次の宿場</button><button id="tBook" type="button">図鑑</button></div>
+    <div id="tools"><button id="tSound" type="button">音 ON</button><button id="tSeason" type="button">季節+1</button><button id="tNext" type="button">次の名所</button><button id="tSt" type="button">次の宿場</button><button id="tAll" type="button">全スタンプ</button><button id="tFev" type="button">フィーバー</button><button id="tBook" type="button">図鑑</button></div>
     <div id="hint"><div class="ring"></div><div>ここを指でぐるぐる回す<br><span style="font-size:.8em">小さい円でも大丈夫。離しても少し走り続けます<br>(パソコンはマウスで円を描く)</span></div></div>
     <div id="dbg">
       <div id="rpm">回転 0.0回/秒 ・ 速度 ×0.00</div>
@@ -211,9 +225,15 @@ html { background: #12141c; }
   const TREE = ["#f2a4c0", "#2f9e4f", "#e0782b", "#dfe9f0"];
   const GRASS = ["#8fcf7a", "#3f9a4a", "#b98a45", "#eef2f6"];
   const KEY = "hashiru-proto-v2";
+  // all-stamps celebration and fever mode
+  const CELEB_SEC = 7;                   // length of the "all 57 collected" celebration
+  const FEVER_STEP_KM = 40;              // every 40 km run in fever = +1 fever level
+  const FEVER_BASE = 1.5, FEVER_GROWTH = 1.12, FEVER_MAX = 6;   // speed factor = BASE * GROWTH^level, capped at MAX
+  const feverFactor = lv => Math.min(FEVER_MAX, FEVER_BASE * Math.pow(FEVER_GROWTH, lv));
+  const REDUCE = (() => { try { return matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) { return false; } })();
 
   // ---------- state ----------
-  const S = { rounds: 0, dir: 1, d: 0, stamps: [], seen: [], totalSec: 0 };
+  const S = { rounds: 0, dir: 1, d: 0, stamps: [], seen: [], totalSec: 0, cleared: false, feverKm: 0 };
   let mult = 0, phase = 0, revRate = 0;
   try {
     const raw = localStorage.getItem(KEY);
@@ -223,6 +243,8 @@ html { background: #12141c; }
   if (!Array.isArray(S.seen)) S.seen = [];
   S.d = Math.max(0, Math.min(LEG, +S.d || 0));
   S.dir = S.dir === -1 ? -1 : 1;
+  S.cleared = !!S.cleared; S.feverKm = Math.max(0, +S.feverKm || 0);
+  let fxNow = 1, celebT = 0, fwT = 0, flashA = 0, feverLv = Math.floor(S.feverKm / FEVER_STEP_KM);   // fever speed factor now / celebration timer / fireworks timer / white flash / fever level
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 
   // ---------- helpers ----------
@@ -866,6 +888,111 @@ html { background: #12141c; }
     }
   }
 
+  // ---------- all-stamps celebration + fever mode ----------
+  const fw = [];                                   // firework sparks
+  function firework(x, y, hue) {
+    for (let i = 0; i < 28; i++) {
+      const ang = i / 28 * Math.PI * 2 + Math.random() * 0.2, v = 34 + Math.random() * 34;
+      fw.push({ x, y, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, hue: (hue + (i % 4) * 25) % 360, life: 1 + Math.random() * 0.5 });
+    }
+  }
+  function drawFw(dt) {
+    for (let i = fw.length - 1; i >= 0; i--) {
+      const p = fw[i]; p.life -= dt; if (p.life <= 0) { fw.splice(i, 1); continue; }
+      p.vy += 55 * dt; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx * dt; p.y += p.vy * dt;
+      ctx.globalAlpha = Math.min(1, p.life * 1.4); rect(p.x, p.y, 2, 2, "hsl(" + p.hue + ",95%,62%)");
+    }
+    ctx.globalAlpha = 1;
+  }
+  const feverK = () => (S.cleared ? sstep((fxNow - 1) / 0.5) : 0);   // 0..1, ramps up as the speed inflates
+  const hsl = h => "hsl(" + (((h % 360) + 360) % 360 | 0) + ",100%,62%)";
+  function startCeleb() { celebT = CELEB_SEC; fwT = 0; burst(128, 50, 80); snd("complete", seasonIdx()); }
+  function onFeverUp() {
+    const atCap = feverFactor(feverLv) >= FEVER_MAX;             // once capped, only the number keeps growing (every 5th level gets a small effect)
+    if (atCap && feverLv % 5 !== 0) return;
+    flashA = 0.8; firework(40 + Math.random() * 176, 24 + Math.random() * 40, Math.random() * 360 | 0); burst(RX(), 60, 20); snd("feverUp", feverLv);
+    if (!atCap) toast("FEVER Lv." + (feverLv + 1) + "  速度 ×" + feverFactor(feverLv).toFixed(1), true);
+  }
+  function rainbowText(str, cx, cy, size) {
+    ctx.font = size + "px DotGothic16, monospace"; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    const gap = size < 14 ? 2 : 0;                  // small text: leave room for the outline
+    const chars = [...str], ws = chars.map(ch => ctx.measureText(ch).width + gap);
+    let x = cx - ws.reduce((s, v) => s + v, 0) / 2;
+    chars.forEach((ch, i) => {
+      const y = cy + (REDUCE ? 0 : Math.round(Math.sin(T * 6 + i * 0.7) * 1.5));
+      ctx.fillStyle = "#14102a"; ctx.fillText(ch, x + 1, y + 1); ctx.fillText(ch, x - 1, y + 1); ctx.fillText(ch, x + 1, y - 1); ctx.fillText(ch, x - 1, y - 1);
+      ctx.fillStyle = hsl(T * 160 + i * 40); ctx.fillText(ch, x, y);
+      x += ws[i];
+    });
+  }
+  function drawCeleb() {
+    if (celebT <= 0) return;
+    const el = CELEB_SEC - celebT, al = Math.min(sstep(el / 0.5), sstep(celebT / 0.6));
+    ctx.fillStyle = "rgba(10,6,30," + (0.42 * al).toFixed(2) + ")"; ctx.fillRect(0, 0, W, H);
+    const rot = REDUCE ? 0 : T * 0.5;
+    ctx.save(); ctx.globalAlpha = 0.22 * al;
+    for (let i = 0; i < 14; i++) {
+      const a0 = rot + i * Math.PI * 2 / 14, a1 = a0 + Math.PI / 14;
+      ctx.fillStyle = hsl(i * 26 + T * 60);
+      ctx.beginPath(); ctx.moveTo(128, 62); ctx.lineTo(128 + Math.cos(a0) * 220, 62 + Math.sin(a0) * 220); ctx.lineTo(128 + Math.cos(a1) * 220, 62 + Math.sin(a1) * 220); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = al;
+    const phaseB = el >= 4.8, e2 = phaseB ? el - 4.8 : el, pop = REDUCE ? 1 : 1 + 0.3 * Math.exp(-e2 * 4) * Math.cos(e2 * 16);
+    ctx.save(); ctx.translate(128, 52); ctx.scale(pop, pop);
+    rainbowText(phaseB ? "FEVER MODE!!" : "全宿場 制覇！", 0, 0, 22);
+    ctx.restore();
+    if (phaseB) rainbowText("走るほど どんどん加速する", 128, 80, 10);
+    else rainbowText("COMPLETE  " + STATIONS.length + "/" + STATIONS.length, 128, 78, 11);
+    ctx.restore();
+  }
+  // behind the runner: glow and afterimages
+  function feverBack() {
+    const k = feverK(); if (k < 0.02) return;
+    const R = RX(), hue = T * 90;
+    const g = ctx.createRadialGradient(R, 112, 2, R, 112, 34);
+    g.addColorStop(0, "hsla(" + (((hue % 360) | 0)) + ",100%,65%," + (0.55 * k).toFixed(2) + ")");
+    g.addColorStop(1, "hsla(" + (((hue + 120) % 360) | 0) + ",100%,60%,0)");
+    ctx.fillStyle = g; ctx.fillRect(R - 36, 76, 72, 68);
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const sp = 6 + 4 * Math.min(1, fxNow / 4);
+    for (let i = 3; i >= 1; i--) {
+      ctx.globalAlpha = 0.3 * k / i;
+      drawRunnerPx(ctx, R - S.dir * i * sp, 130, phase - i * 0.55, mult, Math.floor(S.rounds / 4), S.dir);
+    }
+    ctx.restore();
+  }
+  // in front: rainbow wash, speed streaks, sparkles, rainbow frame + road line, flash
+  function feverFront(dt) {
+    const k = feverK();
+    if (k >= 0.02) {
+      const a = aRoute(), hue = T * 90, fx = Math.min(fxNow, FEVER_MAX);
+      const g = ctx.createLinearGradient(0, 0, W, 0);
+      for (let i = 0; i <= 4; i++) g.addColorStop(i / 4, hsl(hue + i * 70));
+      ctx.save(); ctx.globalCompositeOperation = "overlay"; ctx.globalAlpha = 0.4 * k; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+      const n = Math.round(8 + 14 * k), span = W + 120, sp = 220 + fx * 110;
+      for (let i = 0; i < n; i++) {
+        const y = 10 + Math.floor(hash(i + 900) * 128), len = 18 + Math.floor(hash(i + 930) * 40 * Math.min(1, fx / 3));
+        const x = ((hash(i + 960) * span - S.dir * T * sp * (0.6 + hash(i + 990) * 0.8)) % span + span) % span - 60;
+        ctx.globalAlpha = 0.55 * k; rect(x, y, len, 1, hsl(hue + i * 31));
+      }
+      for (let i = 0; i < 22; i++) {
+        const v = Math.sin(T * 3.2 + i * 1.9); if (v < 0.15) continue;
+        const x = Math.round((((hash(i + 1100) * W * 1.5 - a * 0.3) % W) + W) % W), y = 8 + Math.floor(hash(i + 1130) * 100), s = v > 0.7 ? 2 : 1, col = hsl(hue + i * 47);
+        ctx.globalAlpha = k; rect(x, y - s, 1, s * 2 + 1, col); rect(x - s, y, s * 2 + 1, 1, col); rect(x, y, 1, 1, "#ffffff");
+      }
+      ctx.globalAlpha = 0.9 * k;
+      for (let x = 0; x < W; x += 4) rect(x, 112, 4, 2, hsl(hue + x * 1.4));
+      for (let x = 0; x < W; x += 8) { const c = hsl(hue + x * 1.4); rect(x, 0, 8, 2, c); rect(x, H - 2, 8, 2, c); }
+      for (let y = 0; y < H; y += 8) { const c = hsl(hue + y * 2); rect(0, y, 2, 8, c); rect(W - 2, y, 2, 8, c); }
+      ctx.globalAlpha = 1;
+    }
+    if (flashA > 0) {
+      if (!REDUCE) { ctx.fillStyle = "rgba(255,255,255," + (0.55 * flashA).toFixed(2) + ")"; ctx.fillRect(0, 0, W, H); }
+      flashA = Math.max(0, flashA - dt * 2.4);
+    }
+  }
+
   function render(dt) {
     const a = aRoute();
     drawSky(a);
@@ -875,10 +1002,14 @@ html { background: #12141c; }
     drawBuildings(a);
     drawGround(a);
     drawSpotsAndSigns(a);
+    feverBack();
     drawRunner();
     drawParts(dt);
     drawConfetti(dt);
     if (isNight()) { ctx.fillStyle = "rgba(8,12,40,.34)"; ctx.fillRect(0, 0, W, H); }
+    feverFront(dt);
+    drawFw(dt);
+    drawCeleb();
   }
 
   // ---------- pad drawing ----------
@@ -894,7 +1025,7 @@ html { background: #12141c; }
     pctx.lineCap = "round"; pctx.lineJoin = "round";
     for (let i = 1; i < trail.length; i++) {
       const age = (t - trail[i].t) / 0.7;
-      pctx.strokeStyle = "rgba(255,180,84," + (0.85 * (1 - age)).toFixed(3) + ")";
+      pctx.strokeStyle = S.cleared ? "hsla(" + ((now() * 200 + i * 12) % 360 | 0) + ",95%,62%," + (0.85 * (1 - age)).toFixed(3) + ")" : "rgba(255,180,84," + (0.85 * (1 - age)).toFixed(3) + ")";
       pctx.lineWidth = 10 * (1 - age) + 2;
       pctx.beginPath(); pctx.moveTo(trail[i - 1].x, trail[i - 1].y); pctx.lineTo(trail[i].x, trail[i].y); pctx.stroke();
     }
@@ -921,15 +1052,31 @@ html { background: #12141c; }
     });
   }
   function update(dt) {
+    // all stamps collected -> celebration (about 7 s) -> fever mode (saved as S.cleared)
+    if (!S.cleared && celebT === 0 && S.stamps.length >= STATIONS.length) startCeleb();
+    if (celebT > 0) {
+      celebT -= dt; fwT -= dt;
+      if (fwT <= 0) { fwT = 0.32 + Math.random() * 0.25; firework(30 + Math.random() * 196, 18 + Math.random() * 50, Math.random() * 360 | 0); snd("pop"); }
+      if (celebT <= 0) { celebT = 0; S.cleared = true; flashA = 1; save(); snd("feverUp", 0); }
+    }
     const rate = revPerSec(); revRate = rate;
     const target = Math.min(MAX_MULT, rate / STD_REV);
     mult += (target - mult) * (1 - Math.exp(-dt * (target > mult ? ACCEL : COAST)));
     if (mult < 0.03 && target === 0) mult = 0;
-    phase += dt * Math.pow(mult, 0.75) * 15;
+    phase += dt * Math.pow(mult, 0.75) * 15 * (1 + 0.12 * Math.min(5, fxNow - 1));
     const sIdx = Math.floor(phase / Math.PI); if (sIdx !== lastStepIdx) { lastStepIdx = sIdx; if (mult > 0.04) snd("step", mult); }
     if (AUD && !muted) AUD.ambience(audioState().water, audioState().wind);
     const prevA = aRoute();
-    S.d += BASE_SPEED * mult * dt; S.totalSec += dt * (mult > 0 ? 1 : 0);
+    // fever: the speed factor eases toward the current level's factor (inflation), and every FEVER_STEP_KM run raises the level
+    const feverT = S.cleared ? feverFactor(feverLv) : 1;
+    fxNow += (feverT - fxNow) * (1 - Math.exp(-dt * (feverT > fxNow ? 1.6 : 4)));
+    const dPx = BASE_SPEED * mult * fxNow * dt;
+    S.d += dPx; S.totalSec += dt * (mult > 0 ? 1 : 0);
+    if (S.cleared) {
+      S.feverKm += dPx / PX_PER_KM;
+      const lv = Math.floor(S.feverKm / FEVER_STEP_KM);
+      if (lv > feverLv) { feverLv = lv; onFeverUp(); }
+    }
     if (S.d >= LEG) {
       S.d = LEG; checkSpots(prevA, aRoute()); burst(RX(), 40, 60); snd("fanfare", seasonIdx());
       if (S.dir > 0) { S.dir = -1; S.d = 0; toast("大阪に到着！ここから夜の復路"); }
@@ -948,6 +1095,9 @@ html { background: #12141c; }
     spotDots.forEach((e, i) => e.classList.toggle("got", S.stamps.includes(i)));
     $("hStamp").textContent = S.stamps.length + "/" + STATIONS.length;
     $("hYear").textContent = (Math.floor(S.rounds / 4) + 1) + "年目";
+    document.body.classList.toggle("fever", S.cleared);
+    const fe = $("fev"); fe.hidden = !S.cleared;
+    if (S.cleared) fe.textContent = "FEVER Lv." + (feverLv + 1) + " ×" + fxNow.toFixed(1);
     $("rpm").textContent = "回転 " + revRate.toFixed(1) + "回/秒 ・ 速度 ×" + mult.toFixed(2);
     $("gfill").style.width = (mult / MAX_MULT * 100).toFixed(1) + "%";
   }
@@ -1005,7 +1155,8 @@ html { background: #12141c; }
     let next = ctx.currentTime + 0.1, idx = 0;
     function step(i, t) {
       const st = getState(t), M = MUSIC[st.season], run = clamp(st.mult / 0.8, 0, 1);
-      const bpm = lerp(78, 126, clamp(st.mult / 2, 0, 1)) * (st.night ? 0.92 : 1), iv = 60 / bpm / 4;
+      const fv = Math.max(0, (st.fever || 0) - 1);      // fever: faster tempo plus a sparkling arpeggio
+      const bpm = lerp(78, 126, clamp(st.mult / 2, 0, 1)) * (st.night ? 0.92 : 1) * (1 + 0.05 * Math.min(fv, 5)), iv = 60 / bpm / 4;
       const bar = (i >> 4) & 3, s = i & 15, root = M.root + (st.night ? -12 : 0), cr = root + CHORD[bar];
       if (s === 0) [0, 7, 14].forEach(n => tone(mf(cr + n - 12), t, iv * 16.5, "sine", 0.022, { a: 0.5, hold: true }));
       if (run > 0.05) {
@@ -1020,6 +1171,10 @@ html { background: #12141c; }
         o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
         g.gain.setValueAtTime(0.22 * k, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
         o.connect(g); g.connect(bus); o.start(t); o.stop(t + 0.16);
+      }
+      if (fv > 0.2 && run > 0.05) {
+        tone(mf(root + M.sc[(i * 3) % 5] + 24), t, iv * 0.9, "square", 0.022 * run);
+        if (s % 4 === 0) burst(t, 0.05, 0.06, "highpass", 8000, 0.7);
       }
       return iv;
     }
@@ -1063,6 +1218,18 @@ html { background: #12141c; }
       t = t || ctx.currentTime; const r = MUSIC[season].root + 12;
       (STINGER[kind] || STINGER.def).forEach((n, i) => tone(mf(r + n), t + i * 0.14, 0.55, "sine", 0.1));
     };
+    E.complete = (season, t) => {                          // all stamps collected: rising run, then a big chord
+      t = t || ctx.currentTime; const r = MUSIC[season].root + 12, run = [0, 4, 7, 12, 16, 19, 24, 28];
+      run.forEach((n, i) => { tone(mf(r + n), t + i * 0.1, 0.5, "square", 0.045); tone(mf(r + n - 12), t + i * 0.1, 0.5, "triangle", 0.06); });
+      [0, 4, 7, 12].forEach(n => tone(mf(r + 12 + n), t + 1, 1.6, "triangle", 0.09));
+      [0, 7, 12, 16, 19].forEach(n => tone(mf(r + 12 + n), t + 1, 1.4, "sine", 0.06));
+      burst(t + 1, 0.6, 0.12, "highpass", 5000, 0.7);
+    };
+    E.feverUp = (lv, t) => {                               // level-up blip
+      t = t || ctx.currentTime; const b = 76 + (lv % 8);
+      tone(mf(b), t, 0.14, "square", 0.05); tone(mf(b + 7), t + 0.07, 0.14, "square", 0.05); tone(mf(b + 12), t + 0.14, 0.3, "triangle", 0.08);
+    };
+    E.pop = t => { t = t || ctx.currentTime; burst(t, 0.14, 0.1, "bandpass", 1600, 0.8); tone(mf(92 + Math.floor(Math.random() * 10)), t, 0.25, "sine", 0.05); };
     return E;
   }
   let AUD = null, muted = false, lastStepIdx = 0;
@@ -1071,7 +1238,7 @@ html { background: #12141c; }
     const a = aRoute();
     const near = (k, R) => sstep(1 - Math.abs(FXAX[k] - a) / R);
     return {
-      mult, season: seasonIdx(), night: isNight(),
+      mult, season: seasonIdx(), night: isNight(), fever: S.cleared ? fxNow : 0,
       water: Math.max(near("yokohama", 650), near("biwa", 650), near("hamanako", 650), near("hakone", 500), near("sanjo", 450), near("nihonbashi", 300) * 0.5),
       wind: Math.max(near("suzuka", 650), near("fuji", 700), near("hakone", 500) * 0.6)
     };
@@ -1110,7 +1277,8 @@ html { background: #12141c; }
     const b = $("reset");
     if (!armed) { armed = 1; b.textContent = "もう一度タップで消去"; setTimeout(() => { armed = 0; b.textContent = "最初から"; }, 3000); return; }
     armed = 0; b.textContent = "最初から";
-    S.rounds = 0; S.dir = 1; S.d = 0; S.stamps = []; S.seen = []; S.totalSec = 0; mult = 0; save(); toast("最初からやり直し");
+    S.rounds = 0; S.dir = 1; S.d = 0; S.stamps = []; S.seen = []; S.totalSec = 0; S.cleared = false; S.feverKm = 0;
+    mult = 0; fxNow = 1; celebT = 0; feverLv = 0; flashA = 0; fw.length = 0; save(); toast("最初からやり直し");
   });
 
   function soundLabel() { $("tSound").textContent = muted ? "音 OFF" : "音 ON"; }
@@ -1120,11 +1288,14 @@ html { background: #12141c; }
     if (muted) { if (AUD) { AUD.setMuted(true); AUD.ctx.suspend(); } } else if (AUD) { AUD.setMuted(false); AUD.ctx.resume(); } else ensureAudio();
     soundLabel();
   });
-  if (location.hash !== "#debug") ["tSeason", "tNext", "tSt"].forEach(id => { $(id).hidden = true; });
+  if (location.hash !== "#debug") ["tSeason", "tNext", "tSt", "tAll", "tFev"].forEach(id => { $(id).hidden = true; });
+  const allIdx = () => STATIONS.map((_, i) => i);
+  $("tAll").addEventListener("click", () => { S.stamps = allIdx(); S.seen = allIdx(); S.cleared = false; celebT = 0; fxNow = 1; feverLv = 0; S.feverKm = 0; save(); });   // test: the next frame starts the celebration
+  $("tFev").addEventListener("click", () => { S.stamps = allIdx(); S.seen = allIdx(); S.cleared = true; celebT = 0; S.feverKm = 0; feverLv = 0; fxNow = 1; save(); });   // test: straight into fever
   $("book").addEventListener("pointerdown", e => e.stopPropagation());
   function renderBook() {
     const body = $("bookBody"); body.textContent = "";
-    $("bookTitle").textContent = "宿場スタンプ " + S.stamps.length + "/" + STATIONS.length;
+    $("bookTitle").textContent = "宿場スタンプ " + S.stamps.length + "/" + STATIONS.length + (S.cleared ? "  全制覇" : "");
     PREFS.forEach((p, pi) => {
       const list = STATIONS.map((st, i) => [st, i]).filter(x => x[0].pref === pi);
       const h = document.createElement("h3"); h.textContent = p[1] + "  " + list.filter(x => S.stamps.includes(x[1])).length + "/" + list.length; body.appendChild(h);
@@ -1156,7 +1327,7 @@ html { background: #12141c; }
     cardFor = -1; save();
   });
   sizePad();
-  if (location.hash === "#debug") window.__hashiru = { makeAudio, drawRunnerPx, STATIONS, S, get AUD() { return AUD; }, get mult() { return mult; }, get rev() { return revRate; }, save };   // for local checks
+  if (location.hash === "#debug") window.__hashiru = { makeAudio, drawRunnerPx, STATIONS, S, get AUD() { return AUD; }, get mult() { return mult; }, get rev() { return revRate; }, get fx() { return fxNow; }, get celebT() { return celebT; }, get lv() { return feverLv; }, save };   // for local checks
   requestAnimationFrame(frame);
 })();
 </script>

@@ -1,6 +1,6 @@
 // オフラインでも遊べるようにする Service Worker。
 // ファイルを更新したら VERSION を変えると、利用者の端末のキャッシュも入れ替わる。
-const VERSION = 'hashiru-v1';
+const VERSION = 'hashiru-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon-maskable-512.png', './icons/favicon-32.png'];
 
 self.addEventListener('install', e => {
